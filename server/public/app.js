@@ -4747,6 +4747,187 @@ document.getElementById('seqSavePreset')?.addEventListener('click', () => {
 _renderSeqPresets();
 
 // =============================================================================
+// MDIO / PHY
+// =============================================================================
+
+// Auto-fill PHY address when port selection changes
+document.getElementById('mdioPort')?.addEventListener('change', () => {
+  const PHY_ADDRS = ['0x00', '0x04', '0x05', '0x08', '0x0A', '0x0C'];
+  const port = Number(document.getElementById('mdioPort')?.value || 0);
+  const phyEl = document.getElementById('mdioPhyAddr');
+  if (phyEl && port >= 0 && port <= 5) phyEl.value = PHY_ADDRS[port];
+});
+
+document.getElementById('mdioReadBtn')?.addEventListener('click', async () => {
+  const out = document.getElementById('mdioAccResult');
+  if (!out) return;
+  out.textContent = '읽는 중...'; out.style.color = 'var(--muted)';
+  try {
+    const port    = Number(document.getElementById('mdioPort')?.value    || 0);
+    const phyAddr = document.getElementById('mdioPhyAddr')?.value.trim() || '0x00';
+    const regAddr = document.getElementById('mdioRegAddr')?.value.trim() || '0x01';
+    const d = await api('/api/mdio/read', { method: 'POST', body: JSON.stringify({ port, phyAddr, regAddr }) });
+    out.textContent = `Port ${port}  PHY[${phyAddr}]  Reg[${regAddr}] = ${d.value}`;
+    out.style.color = 'var(--accent)';
+  } catch (e) { out.textContent = `오류: ${e.message}`; out.style.color = '#b91c1c'; }
+});
+
+document.getElementById('mdioWriteBtn')?.addEventListener('click', async () => {
+  const out = document.getElementById('mdioAccResult');
+  if (!out) return;
+  out.textContent = '쓰는 중...'; out.style.color = 'var(--muted)';
+  try {
+    const port    = Number(document.getElementById('mdioPort')?.value      || 0);
+    const phyAddr = document.getElementById('mdioPhyAddr')?.value.trim()   || '0x00';
+    const regAddr = document.getElementById('mdioRegAddr')?.value.trim()   || '0x01';
+    const value   = document.getElementById('mdioWriteValue')?.value.trim()|| '0x0000';
+    await api('/api/mdio/write', { method: 'POST', body: JSON.stringify({ port, phyAddr, regAddr, value }) });
+    out.textContent = `Port ${port}  PHY[${phyAddr}]  Reg[${regAddr}] ← ${value}  완료`;
+    out.style.color = 'var(--ok)';
+  } catch (e) { out.textContent = `오류: ${e.message}`; out.style.color = '#b91c1c'; }
+});
+
+document.getElementById('mdioLinkStatusBtn')?.addEventListener('click', async () => {
+  const grid = document.getElementById('mdioLinkGrid');
+  if (!grid) return;
+  grid.innerHTML = '<span class="muted" style="font-size:.8rem;">읽는 중...</span>';
+  try {
+    const d = await api('/api/mdio/link-status');
+    grid.innerHTML = (d.ports || []).map(p => {
+      const cls   = p.linkUp === true ? 'up' : p.linkUp === false ? 'down' : '';
+      const label = p.linkUp === true ? 'UP' : p.linkUp === false ? 'DOWN' : '—';
+      const bg    = p.linkUp === true ? '#22c55e' : p.linkUp === false ? '#ef4444' : '#888';
+      return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;border:1px solid ${bg};font-size:.75rem;font-weight:600;color:${bg};">
+        <span style="width:8px;height:8px;border-radius:50%;background:${bg};"></span>P${p.port} ${label}</span>`;
+    }).join('');
+  } catch (e) { grid.innerHTML = `<span style="color:#b91c1c;font-size:.8rem;">오류: ${e.message}</span>`; }
+});
+
+document.getElementById('mdioSetupApplyBtn')?.addEventListener('click', async () => {
+  const out = document.getElementById('mdioSetupResult');
+  if (!out) return;
+  out.textContent = '적용 중...'; out.style.color = 'var(--muted)';
+  try {
+    const port            = Number(document.getElementById('mdioPort')?.value || 0);
+    const enable          = document.getElementById('mdioSetupEnable')?.checked    ?? true;
+    const preDisable      = document.getElementById('mdioSetupPreDisable')?.checked ?? false;
+    const interruptEnable = document.getElementById('mdioSetupIntrEnable')?.checked ?? false;
+    const targetMhz       = Number(document.getElementById('mdioTargetMhz')?.value  || 2.5);
+    const d = await api('/api/mdio/setup', { method: 'POST', body: JSON.stringify({ port, enable, preDisable, interruptEnable, targetMhz }) });
+    out.textContent = `완료  SETUP=${d.setup}  TIME=${d.time}  CLK=${d.clk}  MILLISEC=${d.ms}`;
+    out.style.color = 'var(--ok)';
+  } catch (e) { out.textContent = `오류: ${e.message}`; out.style.color = '#b91c1c'; }
+});
+
+// =============================================================================
+// Timestamp
+// =============================================================================
+
+document.getElementById('timestampReadBtn')?.addEventListener('click', async () => {
+  const disp = document.getElementById('timestampDisplay');
+  if (!disp) return;
+  disp.textContent = '읽는 중...';
+  try {
+    const d = await api('/api/timestamp/read');
+    disp.textContent = d.isoString ? `${d.isoString}  (ns: ${d.ns})` : `sec=0x${(d.sec || 0).toString(16).toUpperCase()}  ns=${d.ns}`;
+    disp.style.color = 'var(--accent)';
+  } catch (e) { disp.textContent = `오류: ${e.message}`; disp.style.color = '#b91c1c'; }
+});
+
+document.getElementById('timestampStatusBtn')?.addEventListener('click', async () => {
+  const out = document.getElementById('tsStatusResult');
+  if (!out) return;
+  out.textContent = '읽는 중...';
+  try {
+    const d = await api('/api/timestamp/status');
+    out.textContent = `CTRL_0(ADDEND)=${d.ctrl0}  CTRL_1=${d.ctrl1}  INCREMENT=${d.increment}  PPS_SRC=${d.ppsSrc}  PPS_WIDTH=${d.ppsWidthMs}ms`;
+    out.style.color = 'var(--accent)';
+  } catch (e) { out.textContent = `오류: ${e.message}`; out.style.color = '#b91c1c'; }
+});
+
+document.getElementById('tsSetNowBtn')?.addEventListener('click', () => {
+  const now = new Date();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('tsYear',  now.getFullYear());
+  set('tsMonth', now.getMonth() + 1);
+  set('tsDay',   now.getDate());
+  set('tsHour',  now.getHours());
+  set('tsMin',   now.getMinutes());
+  set('tsSec',   now.getSeconds());
+});
+
+document.getElementById('tsSetBtn')?.addEventListener('click', async () => {
+  const out = document.getElementById('tsSetResult');
+  if (!out) return;
+  out.textContent = '설정 중...'; out.style.color = 'var(--muted)';
+  try {
+    const get = (id) => Number(document.getElementById(id)?.value || 0);
+    const body = { year: get('tsYear'), month: get('tsMonth'), day: get('tsDay'), hour: get('tsHour'), min: get('tsMin'), sec: get('tsSec') };
+    const d = await api('/api/timestamp/set', { method: 'POST', body: JSON.stringify(body) });
+    out.textContent = `시간 설정 완료: ${d.isoString || ''}`;
+    out.style.color = 'var(--ok)';
+  } catch (e) { out.textContent = `오류: ${e.message}`; out.style.color = '#b91c1c'; }
+});
+
+// Auto-fill "Set Time" fields when entering Control sub-tab
+document.querySelector('[data-htview="controlView"]')?.addEventListener('click', () => {
+  const now = new Date();
+  const trySet = (id, v) => { const el = document.getElementById(id); if (el && !el.dataset.userEdited) el.value = v; };
+  trySet('tsYear',  now.getFullYear());
+  trySet('tsMonth', now.getMonth() + 1);
+  trySet('tsDay',   now.getDate());
+  trySet('tsHour',  now.getHours());
+  trySet('tsMin',   now.getMinutes());
+  trySet('tsSec',   now.getSeconds());
+}, { capture: true });
+
+// =============================================================================
+// Counter
+// =============================================================================
+
+document.getElementById('counterReadBtn')?.addEventListener('click', async () => {
+  const statusEl = document.getElementById('counterStatus');
+  const tableEl  = document.getElementById('counterTable');
+  const tbody    = document.getElementById('counterRows');
+  const emptyEl  = document.getElementById('counterEmpty');
+  if (!tbody) return;
+
+  if (statusEl) statusEl.textContent = '읽는 중...';
+  if (emptyEl)  { emptyEl.style.display = 'block'; emptyEl.textContent = '읽는 중...'; }
+  if (tableEl)  tableEl.style.display = 'none';
+
+  try {
+    const port = document.getElementById('counterPort')?.value || 'all';
+    const d = await api(`/api/counter/read?port=${encodeURIComponent(port)}`);
+    const counters = d.counters || [];
+
+    if (statusEl) statusEl.textContent = `${counters.length}개 항목`;
+
+    if (!counters.length) {
+      if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = '데이터 없음 — 시리얼 포트가 연결되어 있는지 확인하세요.'; }
+      return;
+    }
+
+    tbody.innerHTML = counters.map(c =>
+      `<tr>
+        <td>${escHtml(c.group || '')}</td>
+        <td>${escHtml(c.name  || '')}</td>
+        <td><code>${escHtml(c.address || '')}</code></td>
+        <td><code>${escHtml(c.value   || '')}</code></td>
+        <td style="text-align:right;">${c.valueDec ?? ''}</td>
+      </tr>`
+    ).join('');
+
+    if (emptyEl)  emptyEl.style.display = 'none';
+    if (tableEl)  tableEl.style.display = '';
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `오류: ${e.message}`;
+    if (emptyEl)  { emptyEl.style.display = 'block'; emptyEl.textContent = `오류: ${e.message}`; }
+    if (tableEl)  tableEl.style.display = 'none';
+  }
+});
+
+// =============================================================================
 // WebSocket — receive worker events (tab change, capture, serial rx, …)
 // =============================================================================
 (function initWorkerEventSocket() {

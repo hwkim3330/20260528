@@ -586,6 +586,67 @@
               </div>
             </div>
 
+            <!-- ── Timestamp Panel ── -->
+            <div class="simpleCard" id="timestampCard" style="margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <strong>Timestamp (PTP Clock)</strong>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                  <span id="timestampDisplay" style="font-family:monospace;font-size:.9rem;color:var(--accent);">—</span>
+                  <button id="timestampReadBtn" class="ghostBtn small">Read</button>
+                  <button id="timestampStatusBtn" class="ghostBtn small">Status</button>
+                </div>
+              </div>
+
+              <details style="margin-top:.7rem;">
+                <summary style="cursor:pointer;font-size:.82rem;font-weight:600;color:var(--accent-strong);">Set Time</summary>
+                <div style="display:flex;flex-wrap:wrap;gap:.6rem;align-items:flex-end;margin-top:.5rem;">
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Year<input id="tsYear" class="monoInput" type="number" value="2025" style="width:70px;"></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Month<input id="tsMonth" class="monoInput" type="number" min="1" max="12" value="1" style="width:55px;"></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Day<input id="tsDay" class="monoInput" type="number" min="1" max="31" value="1" style="width:55px;"></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Hour<input id="tsHour" class="monoInput" type="number" min="0" max="23" value="0" style="width:55px;"></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Min<input id="tsMin" class="monoInput" type="number" min="0" max="59" value="0" style="width:55px;"></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.3rem;">Sec<input id="tsSec" class="monoInput" type="number" min="0" max="59" value="0" style="width:55px;"></label>
+                  <button id="tsSetNowBtn" class="ghostBtn small" title="Fill with current local time">Now</button>
+                  <button id="tsSetBtn" class="primaryAction" style="min-height:28px;">Set Time</button>
+                </div>
+                <div id="tsSetResult" class="simpleResult" style="margin-top:.4rem;"></div>
+              </details>
+
+              <div id="tsStatusResult" class="simpleResult" style="margin-top:.4rem;"></div>
+            </div>
+
+            <!-- ── Counter Panel ── -->
+            <div class="simpleCard" id="counterCard" style="margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <strong>Port Counters</strong>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                  <label style="font-size:.8rem;display:flex;align-items:center;gap:.4rem;">
+                    Port
+                    <select id="counterPort" class="monoInput" style="width:90px;">
+                      <option value="all">All</option>
+                      <option value="0">Port 0</option>
+                      <option value="1">Port 1</option>
+                      <option value="2">Port 2</option>
+                      <option value="3">Port 3</option>
+                      <option value="4">Port 4</option>
+                      <option value="5">Port 5</option>
+                    </select>
+                  </label>
+                  <button id="counterReadBtn" class="primaryAction" style="min-height:28px;">Read</button>
+                  <span id="counterStatus" class="muted" style="font-size:.8rem;"></span>
+                </div>
+              </div>
+              <div id="counterTableWrap" style="overflow-x:auto;margin-top:.6rem;">
+                <table class="captureTable" id="counterTable" style="display:none;">
+                  <thead>
+                    <tr><th>Group</th><th>Name</th><th>Address</th><th>Value (hex)</th><th>Value (dec)</th></tr>
+                  </thead>
+                  <tbody id="counterRows"></tbody>
+                </table>
+                <div id="counterEmpty" class="muted" style="font-size:.85rem;padding:4px;">카운터를 읽으려면 Read를 누르세요.</div>
+              </div>
+            </div>
+
             <div class="actionsGrid">
               <div class="actionCard">
                 <div class="actionHeader">
@@ -897,6 +958,65 @@
                 <div id="regWriteResult" class="simpleResult"></div>
               </div>
             </div>
+            <!-- ── MDIO / PHY ── -->
+            <div class="simpleCard" id="mdioCard">
+              <strong>MDIO / PHY Access</strong>
+
+              <!-- PHY Read / Write -->
+              <div class="simpleCardRow" style="align-items:flex-end;gap:.8rem;flex-wrap:wrap;">
+                <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.4rem;">
+                  Port <small class="muted">(0–5)</small>
+                  <select id="mdioPort" class="monoInput" style="width:80px;">
+                    <option value="0">Port 0</option>
+                    <option value="1">Port 1</option>
+                    <option value="2">Port 2</option>
+                    <option value="3">Port 3</option>
+                    <option value="4">Port 4</option>
+                    <option value="5">Port 5</option>
+                  </select>
+                </label>
+                <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.4rem;">
+                  PHY Addr <small class="muted">(hex)</small>
+                  <input id="mdioPhyAddr" class="monoInput" value="0x00" style="width:80px;" autocomplete="off">
+                </label>
+                <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.4rem;">
+                  Reg Addr <small class="muted">(hex)</small>
+                  <input id="mdioRegAddr" class="monoInput" value="0x01" style="width:80px;" autocomplete="off">
+                </label>
+                <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.4rem;">
+                  Write Value <small class="muted">(hex)</small>
+                  <input id="mdioWriteValue" class="monoInput" placeholder="0x0000" style="width:100px;" autocomplete="off">
+                </label>
+                <div class="simpleCardActions" style="flex-direction:column;gap:.4rem;">
+                  <button id="mdioReadBtn" class="primaryAction">PHY Read</button>
+                  <button id="mdioWriteBtn" class="primaryAction">PHY Write</button>
+                </div>
+              </div>
+              <div id="mdioAccResult" class="simpleResult" style="color:var(--accent);"></div>
+
+              <!-- Link Status -->
+              <div style="display:flex;align-items:center;gap:.8rem;margin-top:.6rem;flex-wrap:wrap;">
+                <button id="mdioLinkStatusBtn" class="ghostBtn">Read Link Status (all ports)</button>
+                <div id="mdioLinkGrid" style="display:flex;gap:.5rem;flex-wrap:wrap;"></div>
+              </div>
+
+              <!-- MDIO Setup -->
+              <details style="margin-top:.8rem;">
+                <summary style="cursor:pointer;font-size:.82rem;font-weight:600;color:var(--accent-strong);">MDIO Setup (clock / enable)</summary>
+                <div style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:flex-end;">
+                  <label class="sysCtrlCheck"><input id="mdioSetupEnable" type="checkbox" checked><span>Enable</span></label>
+                  <label class="sysCtrlCheck"><input id="mdioSetupPreDisable" type="checkbox"><span>PreDisable</span></label>
+                  <label class="sysCtrlCheck"><input id="mdioSetupIntrEnable" type="checkbox"><span>IntEnable</span></label>
+                  <label style="font-size:.8rem;display:flex;flex-direction:column;gap:.4rem;">
+                    Target MHz
+                    <input id="mdioTargetMhz" class="monoInput" value="2.5" style="width:80px;" type="number" min="0.1" step="0.1" max="12.5">
+                  </label>
+                  <button id="mdioSetupApplyBtn" class="ghostBtn sysCtrlApplyBtn">Apply Setup</button>
+                </div>
+                <div id="mdioSetupResult" class="simpleResult" style="margin-top:.4rem;"></div>
+              </details>
+            </div>
+
           </section>
         </section>
 

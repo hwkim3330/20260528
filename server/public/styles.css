@@ -28,9 +28,7 @@ body {
   overflow: hidden;
 }
 
-body.controlMode {
-  overflow: auto;
-}
+/* body.controlMode overflow is handled by workspace/htSubView, not body */
 
 button,
 input,
@@ -127,9 +125,7 @@ textarea {
   grid-row: 4; /* pin to 1fr row even when linkStrip is hidden (serialMode) */
 }
 
-body.controlMode .workspace {
-  overflow: auto;
-}
+/* .workspace already has overflow: auto; no override needed for controlMode */
 
 body.captureMode .workspace { padding: 0; }
 
@@ -149,8 +145,10 @@ body.captureMode .workspace { padding: 0; }
   display: grid;
   gap: 10px;
   align-content: start;
-  max-height: calc(100vh - 178px);
-  overflow: auto;
+  /* max-height is provided by the grid parent (roleView has definite height).
+     Remove hardcoded calc() so sidebar fills correctly in all viewports. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 h2 {
@@ -715,6 +713,8 @@ body.serialMode .linkStrip { display: none; }
 .serialLog {
   flex: 1;
   min-height: 0;
+  /* Override global pre { height: calc(100% - 36px) } which doesn't apply in flex */
+  height: auto;
   margin: 0;
   padding: 10px 12px;
   background: #0b1220;
@@ -803,9 +803,7 @@ body.serialMode .linkStrip { display: none; }
   overflow: visible;
 }
 
-#controlView.roleView {
-  grid-template-columns: 1fr;
-}
+/* #controlView is an .htSubView, not a .roleView — handled by #controlView.htSubView.active below */
 
 .pairCard {
   display: grid;
@@ -1012,9 +1010,7 @@ body.serialMode .linkStrip { display: none; }
 }
 .advanced { margin-top: 4px; }
 
-#controlView.roleView {
-  align-content: start;
-}
+/* #controlView is an .htSubView — dead selector removed */
 .controlPaneFull {
   height: auto;
   overflow-y: auto;
@@ -2525,6 +2521,15 @@ pre {
   .nodeGrid {
     grid-template-columns: 1fr;
   }
+
+  .topActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .status {
+    max-width: none;
+  }
 }
 
 /* ── Port Monitor Panel ───────────────────────────────────────────────────── */
@@ -2615,16 +2620,6 @@ pre {
 }
 .expChartPanel.hidden { display: none; }
 
-  .topActions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .status {
-    max-width: none;
-  }
-}
-
 /* --- Simple Bidirectional Forwarding Test card --- */
 .sbfStep { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .sbfStep:first-of-type { border-top: none; padding-top: 0; margin-top: 12px; }
@@ -2673,8 +2668,9 @@ pre {
 .sbfCapTable tr.fail td { background: rgba(155,28,28,.05); }
 .sbfSeq { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); margin-top: 4px; word-break: break-all; }
 
-/* Fix: control tab content should scroll when SBF card is long */
-#controlView.roleView .controlPaneFull {
+/* Fix: control tab content should scroll when SBF card is long.
+   #controlView is an .htSubView (not .roleView) — corrected selector. */
+#controlView.htSubView .controlPaneFull {
   height: auto;
   min-height: 0;
   max-height: none;
@@ -2843,10 +2839,15 @@ body:not(.controlMode) .linkStrip { display: none; }
   margin-bottom: 0;
 }
 
-/* ── Register / FDB / Auto views ── full-width single-column */
-#registerView.roleView.active,
-#fdbView.roleView.active,
-#autoView.roleView.active,
+/* ── Register / FDB / Auto views ── full-width single-column htSubViews */
+#registerView.htSubView.active,
+#fdbView.htSubView.active,
+#autoView.htSubView.active {
+  display: block;
+  overflow-y: auto;
+}
+
+/* ── labView is a roleView (top-level tab), not an htSubView */
 #labView.roleView.active {
   display: block;
   overflow-y: auto;

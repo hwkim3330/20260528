@@ -1,4 +1,9 @@
 'use strict';
+
+// Prevent unhandled errors from killing the process
+process.on('uncaughtException',   (err) => console.error('[FATAL uncaughtException]', err));
+process.on('unhandledRejection',  (reason) => console.error('[FATAL unhandledRejection]', reason));
+
 const express = require('express');
 const cors    = require('cors');
 const http    = require('http');
@@ -128,21 +133,24 @@ app.post('/api/simple-bidir-forward-test', async (req, res) => {
       : nodeBMonitorInterfaces.map(i => ({ url: nodeBUrl, iface: i })).concat(nodeAMonitorInterfaces.map(i => ({ url: nodeAUrl, iface: i })));
 
     try {
+      const hdr = { 'Content-Type': 'application/json' };
+      const to  = (ms) => ({ signal: AbortSignal.timeout(ms) });
+
       // Start capture on receiver
-      await fetch(`${receiverUrl}/api/capture/clear`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
-      await fetch(`${receiverUrl}/api/capture/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ interfaces: [recvIface] }) }).catch(() => {});
+      await fetch(`${receiverUrl}/api/capture/clear`, { method: 'POST', headers: hdr, body: '{}', ...to(8000) }).catch(() => {});
+      await fetch(`${receiverUrl}/api/capture/start`, { method: 'POST', headers: hdr, body: JSON.stringify({ interfaces: [recvIface] }), ...to(15000) }).catch(() => {});
 
       // Send packets from sender
       const marker = `${payloadMarkerPrefix}_${dir}_${Date.now()}`;
       const sendBody = { interface: senderIface, protocol: 'udp', dstMac: 'FF:FF:FF:FF:FF:FF', srcIp: '169.254.1.1', dstIp: '169.254.1.2', srcPort: udpSrcPort, dstPort: udpDstPort, count, intervalMs, payload: { mode: 'text', data: marker } };
-      await fetch(`${senderUrl}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sendBody), signal: AbortSignal.timeout(30000) }).catch(() => {});
+      await fetch(`${senderUrl}/api/send`, { method: 'POST', headers: hdr, body: JSON.stringify(sendBody), ...to(30000) }).catch(() => {});
 
       // Wait for capture
-      await new Promise(r => setTimeout(r, captureTimeoutMs));
+      await new Promise(r => setTimeout(r, Math.min(captureTimeoutMs, 10000)));
 
       // Stop and collect capture
-      await fetch(`${receiverUrl}/api/capture/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
-      const capResp = await fetch(`${receiverUrl}/api/capture/packets?limit=1000`).catch(() => null);
+      await fetch(`${receiverUrl}/api/capture/stop`, { method: 'POST', headers: hdr, body: '{}', ...to(8000) }).catch(() => {});
+      const capResp = await fetch(`${receiverUrl}/api/capture/packets?limit=1000`, { ...to(10000) }).catch(() => null);
       const capData = capResp ? await capResp.json().catch(() => ({})) : {};
       const rows = capData.rows ?? [];
       const matched = rows.filter(r => r.decoded && JSON.stringify(r.decoded).includes(marker));

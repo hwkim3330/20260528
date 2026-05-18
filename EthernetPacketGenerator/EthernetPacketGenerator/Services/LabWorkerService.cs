@@ -516,6 +516,11 @@ public class LabWorkerService : IDisposable
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList() ?? new List<string>();
 
+        // Accept bpfFilter or filter field from payload
+        var bpfFilter = payload["bpfFilter"]?.GetValue<string>()
+                     ?? payload["filter"]?.GetValue<string>()
+                     ?? string.Empty;
+
         _captureSeq = 0;
         var captureStart = DateTime.Now;
         var ct = _cts.Token;
@@ -529,6 +534,13 @@ public class LabWorkerService : IDisposable
             {
                 dev.OnPacketArrival += (sender, e) => OnCaptureArrival(sender, e, captureStart, ct);
                 dev.Open(DeviceModes.Promiscuous, 1000);
+
+                // Apply BPF filter at kernel level if provided
+                if (!string.IsNullOrWhiteSpace(bpfFilter))
+                {
+                    try { dev.Filter = bpfFilter; } catch { /* ignore invalid filter — capture all */ }
+                }
+
                 dev.StartCapture();
                 _captureDevices.Add(dev);
             }
@@ -544,7 +556,8 @@ public class LabWorkerService : IDisposable
         return new JsonObject
         {
             ["capturing"]  = _isCapturing,
-            ["interfaces"] = _captureDevices.Count
+            ["interfaces"] = _captureDevices.Count,
+            ["bpfFilter"]  = bpfFilter
         };
     }
 

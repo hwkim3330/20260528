@@ -480,6 +480,28 @@ body.captureMode .toolbar { padding: 6px 16px; }
   border-radius: 8px;
 }
 
+/* BPF active filter badge shown in captureBar while capturing */
+.captureBpfBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #0369a1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.captureBpfBadge code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: #0c4a6e;
+  background: transparent;
+}
+.captureBpfBadge.hidden { display: none; }
+
 .captureStats {
   display: flex;
   gap: 6px;
@@ -620,20 +642,28 @@ body.captureMode .toolbar { padding: 6px 16px; }
 }
 
 .packetListLive .colNum { width: 56px; color: var(--muted); }
-.packetListLive .colTime { width: 110px; color: var(--muted); }
+.packetListLive .colTime { width: 100px; color: var(--muted); }
 .packetListLive .colIface {
-  width: 150px; max-width: 150px;
+  width: 120px; max-width: 120px;
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 11.5px; color: var(--accent-strong);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.packetListLive .colSrcMac, .packetListLive .colDstMac {
+  width: 136px; max-width: 136px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted);
+}
+.packetListLive .colSrcMac { color: inherit; }
 .packetListLive .colSrc, .packetListLive .colDst {
-  max-width: 200px;
+  max-width: 160px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .packetListLive .colDst { color: var(--muted); }
-.packetListLive .colProto { width: 80px; }
-.packetListLive .colLen { width: 64px; text-align: right; color: var(--muted); }
+.packetListLive .colProto { width: 76px; }
+.packetListLive .colLen { width: 60px; text-align: right; color: var(--muted); }
 
 .wsEmpty {
   position: absolute;

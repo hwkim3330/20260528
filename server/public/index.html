@@ -358,6 +358,7 @@
                 <span>Auto-scroll</span>
               </label>
               <input id="captureDisplayFilter" autocomplete="off" placeholder="display filter — tcp / udp / icmp[v6] / arp / vlan / ipv6 / lldp / ptp / dns / dhcp / mac:.. / ip:.." title="Display filter — applied client-side after decode. Tokens: tcp udp icmp icmpv6 arp vlan ipv4 ipv6 lldp ptp lacp dns dhcp ntp mdns / mac:&lt;substr&gt; / ip:&lt;substr&gt; / port:&lt;number&gt; / any substring of decoded JSON.">
+              <span id="captureBpfBadge" class="captureBpfBadge hidden">BPF: <code id="captureBpfText"></code></span>
               <div class="captureStats">
                 <span class="statChip"><span>pkts</span><strong id="capStatPkts">0</strong></span>
                 <span class="statChip"><span>pps</span><strong id="capStatPps">0</strong></span>
@@ -381,6 +382,8 @@
                     <th class="colNum">#</th>
                     <th class="colTime">Time</th>
                     <th class="colIface">Interface</th>
+                    <th class="colSrcMac">Src MAC</th>
+                    <th class="colDstMac">Dst MAC</th>
                     <th class="colSrc">Source</th>
                     <th class="colDst">Destination</th>
                     <th class="colProto">Protocol</th>

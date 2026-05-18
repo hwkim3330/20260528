@@ -326,8 +326,11 @@ function frameMatchesFilter(packet, filter) {
 
 function buildPacketRow(packet) {
   const decoded = packet.decoded || {};
-  const src = decoded.ipv4?.src || decoded.arp?.senderIp || decoded.ethernet?.srcMac || '-';
-  const dst = decoded.ipv4?.dst || decoded.arp?.targetIp || decoded.ethernet?.dstMac || '-';
+  const eth = decoded.ethernet || decoded.eth || {};
+  const srcMac = eth.srcMac || eth.src || '-';
+  const dstMac = eth.dstMac || eth.dst || '-';
+  const srcIp = decoded.ipv4?.src || decoded.arp?.senderIp || decoded.ipv6?.src || '-';
+  const dstIp = decoded.ipv4?.dst || decoded.arp?.targetIp || decoded.ipv6?.dst || '-';
   const t = packet.timestamp;
   const d = new Date(t * 1000);
   const ms = String(d.getMilliseconds()).padStart(3, '0');
@@ -339,7 +342,7 @@ function buildPacketRow(packet) {
   tr.className = rowProtoClass(decoded);
   // No per-row listener — tbody-level delegation handles clicks.
   const iface = packet._iface || '';
-  tr.innerHTML = `<td class="colNum">${idx + 1}</td><td class="colTime">${tStr}</td><td class="colIface">${iface}</td><td class="colSrc">${src}</td><td class="colDst">${dst}</td><td class="colProto">${proto}</td><td class="colLen">${packet.length}</td><td>${packetInfo(decoded)}</td>`;
+  tr.innerHTML = `<td class="colNum">${idx + 1}</td><td class="colTime">${tStr}</td><td class="colIface">${iface}</td><td class="colSrcMac">${srcMac}</td><td class="colDstMac">${dstMac}</td><td class="colSrc">${srcIp}</td><td class="colDst">${dstIp}</td><td class="colProto">${proto}</td><td class="colLen">${packet.length}</td><td>${packetInfo(decoded)}</td>`;
   return tr;
 }
 
@@ -562,6 +565,26 @@ async function startCaptureStream() {
   capture.filter = $('captureDisplayFilter').value.trim();
   capture.readers = [];
   capture.abort = new AbortController();
+
+  // Show BPF badge if any capture filter is active
+  const _srcMac = $('captureSrcMac')?.value.trim() || '';
+  const _dstMac = $('captureDstMac')?.value.trim() || '';
+  const _etherType = $('captureEtherType')?.value.trim() || '';
+  const bpfParts = [];
+  if (_srcMac) bpfParts.push(`ether src ${_srcMac.toLowerCase()}`);
+  if (_dstMac) bpfParts.push(`ether dst ${_dstMac.toLowerCase()}`);
+  if (_etherType) bpfParts.push(`ether proto ${_etherType}`);
+  const activeBpf = bpfParts.join(' and ');
+  const badge = $('captureBpfBadge');
+  const bpfText = $('captureBpfText');
+  if (badge && bpfText) {
+    if (activeBpf) {
+      bpfText.textContent = activeBpf;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
   const statTimer = setInterval(() => {
     const now = performance.now();
     const dt = (now - capture.lastWindow.t) / 1000;
@@ -598,6 +621,8 @@ function finishCaptureStream(label) {
   $('captureStop').disabled = true;
   $('capStatState').classList.remove('running');
   $('capStatState').textContent = label || 'idle';
+  // Hide BPF badge when capture stops
+  $('captureBpfBadge')?.classList.add('hidden');
   refreshCaptureStats();
 }
 

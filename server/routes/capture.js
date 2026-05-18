@@ -6,6 +6,19 @@ function workerErr(res, err) {
   res.status(err.workerError ? 502 : 503).json({ ok: false, error: err.message });
 }
 
+/**
+ * Build a BPF filter string from MAC/EtherType fields.
+ * If a raw bpfFilter string is already provided, it takes precedence.
+ */
+function buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter } = {}) {
+  if (bpfFilter && bpfFilter.trim()) return bpfFilter.trim();
+  const parts = [];
+  if (srcMac && srcMac.trim()) parts.push(`ether src ${srcMac.trim().toLowerCase()}`);
+  if (dstMac && dstMac.trim()) parts.push(`ether dst ${dstMac.trim().toLowerCase()}`);
+  if (etherType && etherType.trim()) parts.push(`ether proto ${etherType.trim()}`);
+  return parts.join(' and ');
+}
+
 // GET /api/capture/status
 router.get('/capture/status', async (req, res) => {
   try {
@@ -40,8 +53,12 @@ router.get('/capture/packets', async (req, res) => {
 // POST /api/capture/start
 router.post('/capture/start', async (req, res) => {
   try {
-    const data = await req.app.locals.localCmd('startCapture', req.body || {}, 10000);
-    res.json({ ok: true, ...(data || {}) });
+    const body = req.body || {};
+    const { srcMac = '', dstMac = '', etherType = '', bpfFilter: rawBpf = '' } = body;
+    const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter: rawBpf });
+    const cmdPayload = { ...body, bpfFilter };
+    const data = await req.app.locals.localCmd('startCapture', cmdPayload, 10000);
+    res.json({ ok: true, bpfFilter, ...(data || {}) });
   } catch (err) { workerErr(res, err); }
 });
 
@@ -146,9 +163,12 @@ router.post('/capture-stream', async (req, res) => {
     }
   };
 
+  // Build BPF filter from MAC/EtherType fields for kernel-level filtering
+  const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType });
+
   try {
     await workerHub.sendCommand(localWorkerId, 'clearCapture', {}, 5000);
-    await workerHub.sendCommand(localWorkerId, 'startCapture', { interfaces }, 10000);
+    await workerHub.sendCommand(localWorkerId, 'startCapture', { interfaces, bpfFilter }, 10000);
     workerHub.events.on(`event:${localWorkerId}`, onEvent);
   } catch (err) {
     write({ error: err.message });

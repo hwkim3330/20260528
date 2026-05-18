@@ -5174,10 +5174,11 @@ function caCheck() {
     return;
   }
 
+  const total   = caState.packets.length;
   const matches = caState.packets.filter((p) => caPacketMatchesTarget(p, addr));
   const verdict = matches.length > 0 ? 'PASS' : 'FAIL';
   resultEl.className   = `caResult ${verdict.toLowerCase()}`;
-  resultEl.textContent = `${verdict}  —  Target: ${addr}  |  Matched: ${matches.length} packet(s)`;
+  resultEl.textContent = `${verdict}  —  Target: ${addr}  |  Matched: ${matches.length}/${total} packet(s)`;
 }
 
 // ─── Start capture on peer ────────────────────────────────────────────────────
@@ -5269,6 +5270,60 @@ async function caClear() {
   } catch { /* ignore */ }
 }
 
+// ─── Format raw hex string into 16-byte-per-line hex dump ────────────────────
+function formatHex(raw) {
+  if (!raw) return '';
+  const clean = raw.replace(/\s/g, '');
+  const lines = [];
+  for (let offset = 0; offset < clean.length; offset += 32) {
+    const chunk = clean.slice(offset, offset + 32);
+    const bytes = chunk.match(/.{1,2}/g) || [];
+    const hex   = bytes.join(' ').padEnd(47, ' ');
+    const ascii = bytes.map((b) => {
+      const c = parseInt(b, 16);
+      return c >= 0x20 && c <= 0x7e ? String.fromCharCode(c) : '.';
+    }).join('');
+    lines.push(`${(offset / 2).toString(16).padStart(4, '0')}  ${hex}  ${ascii}`);
+  }
+  return lines.join('\n');
+}
+
+// ─── Show packet detail (decoded JSON + hex dump) ─────────────────────────────
+function caShowDetail(pkt) {
+  const pre = $('caDetailText');
+  if (!pre) return;
+  const parts = [];
+  if (pkt.decoded) parts.push(JSON.stringify(pkt.decoded, null, 2));
+  if (pkt.frameHex) parts.push('\n--- HEX ---\n' + formatHex(pkt.frameHex));
+  pre.textContent = parts.length ? parts.join('\n') : JSON.stringify(pkt, null, 2);
+}
+
+// ─── Load connected workers into the dropdown ─────────────────────────────────
+async function caLoadWorkers() {
+  const sel = $('caWorkerSelect');
+  if (!sel) return;
+  try {
+    const data = await api('/api/workers');
+    const workers = data.workers || [];
+    // Keep the placeholder option, rebuild the rest
+    while (sel.options.length > 1) sel.remove(1);
+    // Add "localhost (local)" as convenience
+    const localOpt = document.createElement('option');
+    localOpt.value = 'http://localhost:8080';
+    localOpt.textContent = 'localhost:8080 (local)';
+    sel.appendChild(localOpt);
+    for (const w of workers) {
+      const url = w.info?.url || w.info?.peerUrl || '';
+      const label = w.info?.label || w.id || w.info?.hostname || url || w.id;
+      const opt = document.createElement('option');
+      opt.value = url || `worker:${w.id}`;
+      opt.textContent = url ? `${label} — ${url}` : label;
+      opt.title = JSON.stringify(w.info || {});
+      sel.appendChild(opt);
+    }
+  } catch { /* ignore */ }
+}
+
 // ─── Wire up event listeners ──────────────────────────────────────────────────
 (function initCaptureAddress() {
   const probeBtn   = $('caProbeBtn');
@@ -5287,6 +5342,20 @@ async function caClear() {
   stopBtn.addEventListener('click', caStopCapture);
   clearBtn.addEventListener('click', caClear);
   checkBtn?.addEventListener('click', caCheck);
+
+  // Worker dropdown → autofill URL + re-probe
+  const workerSel = $('caWorkerSelect');
+  workerSel?.addEventListener('change', () => {
+    const val = workerSel.value;
+    if (!val) return;
+    const urlEl = $('caPeerUrl');
+    if (urlEl && val.startsWith('http')) {
+      urlEl.value = val;
+      caState.peerUrl = val;
+    }
+    workerSel.value = ''; // reset dropdown
+    caProbe();
+  });
 
   // Enter in address input → check
   addrInput?.addEventListener('keydown', (e) => {
@@ -5316,18 +5385,13 @@ async function caClear() {
     caState.selectedIdx = idx;
     document.querySelectorAll('#caRows tr').forEach((r) => r.classList.toggle('selected', r === tr));
     const det = $('caDetailPane');
-    const pre = $('caDetailText');
-    if (det && pre) {
-      det.classList.remove('hidden');
-      let detail = '';
-      if (pkt.decoded) detail += JSON.stringify(pkt.decoded, null, 2);
-      if (pkt.frameHex) detail += '\n\n' + pkt.frameHex.match(/.{1,32}/g)?.join('\n') || pkt.frameHex;
-      pre.textContent = detail || JSON.stringify(pkt, null, 2);
-    }
+    if (det) det.classList.remove('hidden');
+    caShowDetail(pkt);
   });
 
-  // Auto-probe localhost when tab is first activated
+  // Tab activation → load workers + auto-probe if no interfaces yet
   document.querySelector('[data-view="captureAddressView"]')?.addEventListener('click', () => {
+    caLoadWorkers();
     if (!caState.ifaces.length) caProbe();
   });
 })();

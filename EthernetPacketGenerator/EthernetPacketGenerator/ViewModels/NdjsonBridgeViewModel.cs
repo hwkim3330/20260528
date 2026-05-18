@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Windows.Input;
 using System.Windows.Threading;
 using EthernetPacketGenerator.Commands;
@@ -37,9 +36,12 @@ public sealed class RemoteInterfaceItem : ViewModelBase
 /// <summary>
 /// Remote-capture row shown in the DataGrid.
 /// Populated from peer's /api/capture/packets response.
+/// Inherits ViewModelBase so IsMatch can trigger DataTrigger row highlight.
 /// </summary>
-public sealed class RemoteCaptureRow
+public sealed class RemoteCaptureRow : ViewModelBase
 {
+    private bool _isMatch;
+
     public int    No            { get; init; }
     public string Time          { get; init; } = "";
     public string InterfaceName { get; init; } = "";
@@ -51,17 +53,26 @@ public sealed class RemoteCaptureRow
     public int    Length        { get; init; }
     public string Info          { get; init; } = "";
     public string DetailJson    { get; init; } = "";
-    public bool   IsMatch       { get; set; }   // matches target address
+    public string HexDump       { get; init; } = "";  // formatted hex from peer frameHex
+
+    /// <summary>True when this row matches the evaluated target address — drives DataTrigger highlight.</summary>
+    public bool IsMatch
+    {
+        get => _isMatch;
+        set => SetProperty(ref _isMatch, value);
+    }
 }
 
 /// <summary>
 /// ViewModel for the "Capture Address" tab.
 /// Probes a remote peer's interfaces, starts/stops capture there,
-/// polls packets through the Node.js proxy, and evaluates PASS/FAIL.
+/// polls packets directly from the peer (no Node.js proxy hop needed from C#),
+/// and evaluates PASS/FAIL.
 /// </summary>
 public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 {
     // ── HTTP client (shared, long-lived) ──────────────────────────────────────
+    // C# has no CORS restrictions → call the peer directly, no proxy needed.
     private static readonly HttpClient _http = new HttpClient
     {
         Timeout = TimeSpan.FromSeconds(10)
@@ -69,7 +80,6 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 
     // ── State ─────────────────────────────────────────────────────────────────
     private string            _peerUrl        = "http://localhost:8080";
-    private string            _proxyBase      = "http://localhost:8080"; // local Node.js server
     private string            _status         = "Enter peer URL and press Probe.";
     private string            _targetAddress  = "";
     private string            _resultText     = "";
@@ -78,6 +88,9 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
     private RemoteCaptureRow? _selectedPacket = null;
 
     private DispatcherTimer? _pollTimer;
+
+    // ── Peer base URL helper ──────────────────────────────────────────────────
+    private string PeerBase => _peerUrl.TrimEnd('/');
 
     // ── Public bindable properties ────────────────────────────────────────────
     public string PeerUrl
@@ -126,8 +139,20 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string SelectedDetailText =>
-        _selectedPacket?.DetailJson ?? "Select a packet row to inspect decoded fields.";
+    public string SelectedDetailText
+    {
+        get
+        {
+            if (_selectedPacket == null)
+                return "Select a packet row to inspect decoded fields.";
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(_selectedPacket.DetailJson))
+                parts.Add(_selectedPacket.DetailJson);
+            if (!string.IsNullOrWhiteSpace(_selectedPacket.HexDump))
+                parts.Add("\n--- HEX DUMP ---\n" + _selectedPacket.HexDump);
+            return parts.Count > 0 ? string.Join("\n", parts) : "(no decoded data)";
+        }
+    }
 
     // ── Collections ───────────────────────────────────────────────────────────
     public ObservableCollection<RemoteInterfaceItem> PeerInterfaces { get; } = new();
@@ -143,10 +168,6 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
     // ── Constructor ───────────────────────────────────────────────────────────
     public NdjsonBridgeViewModel()
     {
-        // Determine the local proxy base (Node.js server).
-        // Defaults to localhost:8080 — same as peerUrl initial value.
-        _proxyBase = "http://localhost:8080";
-
         ProbeCommand = new RelayCommand(
             async () => await ProbeAsync(),
             () => !IsCapturing);
@@ -165,7 +186,7 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         CheckCommand = new RelayCommand(Evaluate);
     }
 
-    // ── Probe ─────────────────────────────────────────────────────────────────
+    // ── Probe — direct peer call (no proxy hop) ───────────────────────────────
     private async Task ProbeAsync()
     {
         Status = "Probing peer…";
@@ -173,30 +194,36 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var body    = JsonSerializer.Serialize(new { peerUrl = PeerUrl });
-            var content = new StringContent(body, Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync($"{_proxyBase}/api/remote-capture/probe", content);
-            var json    = await resp.Content.ReadAsStringAsync();
-            var doc     = JsonDocument.Parse(json);
-            var root    = doc.RootElement;
-
-            if (!root.TryGetProperty("ok", out var okProp) || !okProp.GetBoolean())
+            // C# has no CORS — call peer directly.
+            var resp = await _http.GetAsync($"{PeerBase}/api/interfaces");
+            if (!resp.IsSuccessStatusCode)
             {
-                Status = $"Probe failed: {root.GetProperty("error").GetString()}";
+                Status = $"Probe failed: HTTP {(int)resp.StatusCode}";
                 return;
             }
+            var json = await resp.Content.ReadAsStringAsync();
+            var doc  = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
-            if (root.TryGetProperty("interfaces", out var ifaces))
+            var ifaceProp = root.TryGetProperty("interfaces", out var ip) ? ip : default;
+            if (ifaceProp.ValueKind == JsonValueKind.Array)
             {
-                foreach (var iface in ifaces.EnumerateArray())
+                foreach (var iface in ifaceProp.EnumerateArray())
                 {
+                    string GetStr(JsonElement el, params string[] keys)
+                    {
+                        foreach (var key in keys)
+                            if (el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String)
+                                return v.GetString() ?? "";
+                        return "";
+                    }
                     PeerInterfaces.Add(new RemoteInterfaceItem
                     {
-                        Key         = iface.TryGetProperty("key",  out var k) ? k.GetString() ?? "" : "",
-                        Name        = iface.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
-                        Mac         = iface.TryGetProperty("mac",  out var m) ? m.GetString() ?? "" : "",
-                        State       = iface.TryGetProperty("state",out var s) ? s.GetString() ?? "" : "",
-                        Description = iface.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "",
+                        Key         = GetStr(iface, "key", "name", "deviceName"),
+                        Name        = GetStr(iface, "name", "deviceName", "key"),
+                        Mac         = GetStr(iface, "mac"),
+                        State       = GetStr(iface, "state"),
+                        Description = GetStr(iface, "description"),
                         IsSelected  = false
                     });
                 }
@@ -214,7 +241,7 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // ── Start capture ─────────────────────────────────────────────────────────
+    // ── Start capture — clear first, then start directly on peer ─────────────
     private async Task StartCaptureAsync()
     {
         var selected = PeerInterfaces.Where(i => i.IsSelected).Select(i => i.Key).ToArray();
@@ -232,15 +259,21 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var body    = JsonSerializer.Serialize(new { peerUrl = PeerUrl, interfaces = selected });
-            var content = new StringContent(body, Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync($"{_proxyBase}/api/remote-capture/start", content);
-            var json    = await resp.Content.ReadAsStringAsync();
-            var doc     = JsonDocument.Parse(json);
-
-            if (!doc.RootElement.TryGetProperty("ok", out var ok) || !ok.GetBoolean())
+            // Clear first (best-effort)
+            try
             {
-                Status = "Start failed: " + (doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : "unknown");
+                await _http.PostAsync($"{PeerBase}/api/capture/clear",
+                    new StringContent("{}", Encoding.UTF8, "application/json"));
+            }
+            catch { /* ignore */ }
+
+            // Start capture directly on peer
+            var body    = JsonSerializer.Serialize(new { interfaces = selected });
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var resp    = await _http.PostAsync($"{PeerBase}/api/capture/start", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Status = $"Start failed: HTTP {(int)resp.StatusCode}";
                 return;
             }
 
@@ -261,7 +294,7 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // ── Stop capture ──────────────────────────────────────────────────────────
+    // ── Stop capture — direct peer call ──────────────────────────────────────
     private async Task StopCaptureAsync()
     {
         _pollTimer?.Stop();
@@ -270,9 +303,8 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var body    = JsonSerializer.Serialize(new { peerUrl = PeerUrl });
-            var content = new StringContent(body, Encoding.UTF8, "application/json");
-            await _http.PostAsync($"{_proxyBase}/api/remote-capture/stop", content);
+            await _http.PostAsync($"{PeerBase}/api/capture/stop",
+                new StringContent("{}", Encoding.UTF8, "application/json"));
         }
         catch { /* ignore */ }
 
@@ -281,7 +313,7 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         Status = $"Stopped. {Packets.Count} packet(s) captured.";
     }
 
-    // ── Clear ─────────────────────────────────────────────────────────────────
+    // ── Clear — direct peer call ──────────────────────────────────────────────
     private async Task ClearAsync()
     {
         if (IsCapturing) await StopCaptureAsync();
@@ -293,34 +325,38 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var body    = JsonSerializer.Serialize(new { peerUrl = PeerUrl });
-            var content = new StringContent(body, Encoding.UTF8, "application/json");
-            await _http.PostAsync($"{_proxyBase}/api/remote-capture/clear", content);
+            await _http.PostAsync($"{PeerBase}/api/capture/clear",
+                new StringContent("{}", Encoding.UTF8, "application/json"));
         }
         catch { /* ignore */ }
 
         Status = "Cleared.";
     }
 
-    // ── Poll for new packets ──────────────────────────────────────────────────
+    // ── Poll for new packets — direct peer call ───────────────────────────────
+    // The peer's /api/capture/packets?limit=N returns ALL captured rows so far.
+    // We slice from _lastOffset to get only newly arrived ones.
     private async Task PollAsync()
     {
         try
         {
-            var url  = $"{_proxyBase}/api/remote-capture/packets?peerUrl={Uri.EscapeDataString(PeerUrl)}&limit=500&offset={_lastOffset}";
-            var resp = await _http.GetAsync(url);
-            var json = await resp.Content.ReadAsStringAsync();
-            var doc  = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            var limit = 500 + _lastOffset;   // ask for all rows, apply offset client-side
+            var url   = $"{PeerBase}/api/capture/packets?limit={limit}";
+            var resp  = await _http.GetAsync(url);
+            if (!resp.IsSuccessStatusCode) return;
+            var json  = await resp.Content.ReadAsStringAsync();
+            var doc   = JsonDocument.Parse(json);
+            var root  = doc.RootElement;
 
             if (!root.TryGetProperty("rows", out var rowsProp)) return;
 
-            var rows  = rowsProp.EnumerateArray().ToList();
-            if (rows.Count == 0) return;
+            var allRows  = rowsProp.EnumerateArray().ToList();
+            var newRows  = allRows.Skip(_lastOffset).ToList();
+            if (newRows.Count == 0) return;
 
-            _lastOffset += rows.Count;
+            _lastOffset += newRows.Count;
 
-            foreach (var row in rows)
+            foreach (var row in newRows)
             {
                 var pkt = ParseRow(Packets.Count + 1, row);
                 Packets.Add(pkt);
@@ -376,11 +412,29 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
             else if (decoded.TryGetProperty("ipv4", out _)) proto = "IPv4";
         }
 
-        var iface  = row.TryGetProperty("interface", out var ifProp) ? ifProp.GetString() ?? "" : "";
-        var length = row.TryGetProperty("length",    out var lenProp) ? lenProp.GetInt32() : 0;
-        var detail = decoded.ValueKind != JsonValueKind.Undefined
+        var iface   = row.TryGetProperty("interface", out var ifProp) ? ifProp.GetString() ?? "" : "";
+        var length  = row.TryGetProperty("length",    out var lenProp) ? lenProp.GetInt32() : 0;
+        var detail  = decoded.ValueKind != JsonValueKind.Undefined
             ? JsonSerializer.Serialize(decoded, new JsonSerializerOptions { WriteIndented = true })
             : "";
+
+        // Build a formatted hex dump from the peer's raw frameHex string
+        var hexDump = "";
+        if (row.TryGetProperty("frameHex", out var fhProp) && fhProp.ValueKind == JsonValueKind.String)
+        {
+            var raw = fhProp.GetString() ?? "";
+            // Strip spaces, then group into lines of 32 chars (16 bytes)
+            var clean = raw.Replace(" ", "").Replace("\n", "");
+            var sb    = new System.Text.StringBuilder();
+            for (int offset = 0; offset < clean.Length; offset += 32)
+            {
+                var chunk = clean.Substring(offset, Math.Min(32, clean.Length - offset));
+                var hex   = string.Join(" ", Enumerable.Range(0, chunk.Length / 2)
+                    .Select(i => chunk.Substring(i * 2, 2)));
+                sb.AppendLine($"{offset / 2:X4}  {hex}");
+            }
+            hexDump = sb.ToString();
+        }
 
         return new RemoteCaptureRow
         {
@@ -394,7 +448,8 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
             Protocol      = proto,
             Length        = length,
             Info          = $"{srcMac} → {dstMac}",
-            DetailJson    = detail
+            DetailJson    = detail,
+            HexDump       = hexDump
         };
     }
 
@@ -405,13 +460,21 @@ public sealed class NdjsonBridgeViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrEmpty(addr))
         {
             ResultText = "";
+            // Clear IsMatch flags — each row raises PropertyChanged via SetProperty
+            foreach (var p in Packets) p.IsMatch = false;
             return;
         }
 
+        var total   = Packets.Count;
         var matches = Packets.Where(p => RowMatchesAddr(p, addr)).ToList();
         var verdict = matches.Count > 0 ? "PASS" : "FAIL";
-        ResultText = $"{verdict}  —  Target: {addr}  |  Matched: {matches.Count} packet(s)";
-        Status     = $"{verdict}: {matches.Count} packet(s) matched address '{addr}'.";
+
+        // Mark matching rows — SetProperty raises PropertyChanged → DataTrigger highlights
+        foreach (var p in Packets)
+            p.IsMatch = matches.Contains(p);
+
+        ResultText = $"{verdict}  —  Target: {addr}  |  Matched: {matches.Count}/{total} packet(s)";
+        Status     = $"{verdict}: {matches.Count}/{total} packet(s) matched address '{addr}'.";
     }
 
     private static bool RowMatchesAddr(RemoteCaptureRow row, string addr)

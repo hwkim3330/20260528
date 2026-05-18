@@ -122,11 +122,14 @@ function startCaptureTcpdump(ifaceNames, filter, onPacket, onError) {
       }
     });
 
-    // Capture stderr so permission/device errors are surfaced
+    // Capture stderr: normal startup line ("listening on …") is not an error
     proc.stderr.on('data', (chunk) => {
       const msg = chunk.toString().trim();
-      if (msg) lastCaptureError = msg;
-      try { onError && onError(new Error(msg)); } catch {}
+      if (!msg) return;
+      lastCaptureError = msg;
+      if (!/listening on /i.test(msg)) {
+        try { onError && onError(new Error(msg)); } catch {}
+      }
     });
 
     proc.on('error', (err) => {

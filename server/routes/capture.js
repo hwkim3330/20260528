@@ -85,13 +85,14 @@ router.post('/capture/start', async (req, res) => {
     const stillRunning = pb.isCapturing();
     const lastErr      = pb.getLastCaptureError ? pb.getLastCaptureError() : captureErr;
 
-    if (!stillRunning && lastErr) {
-      const hint = /permission/i.test(lastErr)
+    const realErr = lastErr && !/listening on /i.test(lastErr) ? lastErr : '';
+    if (!stillRunning && realErr) {
+      const hint = /permission/i.test(realErr)
         ? ' → fix: sudo setcap cap_net_raw,cap_net_admin+eip $(which tcpdump)  or run: sudo node server.js'
-        : /no such device|siocgifhwaddr/i.test(lastErr)
+        : /no such device|siocgifhwaddr/i.test(realErr)
           ? ' → interface not found; check /api/interfaces for available names'
           : '';
-      return res.status(500).json({ ok: false, error: lastErr + hint });
+      return res.status(500).json({ ok: false, error: realErr + hint });
     }
     res.json({ ok: true, bpfFilter, capturing: stillRunning, interfaces: pb.getCaptureDeviceNames().length,
                warning: !stillRunning ? 'No matching capture device found' : undefined });

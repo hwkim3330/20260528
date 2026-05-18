@@ -1,0 +1,5 @@
+TC_ID,Test_Scenario_ID,Index,Name,EventType,MAC,VlanValid,VlanID,FrameRef,Timeout,비고
+1,0,0,FDBFlush,FdbFlush,-,-,-,-,-,Auto-Learning - 단일 MAC 학습 검증
+1,0,1,Packet _Send,Packet,-,-,-,Packet_0,-,
+1,0,2,FDB_Learn_wait,Delay,-,-,-,-,100ms,
+1,0,3,FDB_Entry Read,FdbRead,C8:4D:44:25:2D:37,FALSE,-,-,-,

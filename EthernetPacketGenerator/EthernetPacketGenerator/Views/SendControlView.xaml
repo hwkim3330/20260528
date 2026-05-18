@@ -1,0 +1,195 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.SendControlView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel Background="{StaticResource SurfaceAltBrush}">
+        <TextBlock DockPanel.Dock="Top" Text="SEND" Style="{StaticResource PanelHeader}"/>
+
+        <!-- ── Interface multi-select row ── -->
+        <DockPanel DockPanel.Dock="Top" Margin="8,4,8,2" MinHeight="26">
+            <TextBlock DockPanel.Dock="Left" Text="Interfaces:" VerticalAlignment="Top"
+                       Foreground="{StaticResource ForegroundBrush}" Margin="0,4,8,0" FontSize="11"/>
+            <ItemsControl ItemsSource="{Binding InterfaceEntries}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,0,6,3" Padding="6,4" CornerRadius="3"
+                                Background="#1E1E2E" BorderBrush="#3A3A5A" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- 활성 체크박스: 체크 = 전송 풀에 포함 -->
+                                <CheckBox IsChecked="{Binding IsActive, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="0,0,5,0"
+                                          ToolTip="체크 시 이 인터페이스를 전송에 사용"/>
+                                <!-- 인터페이스 이름 -->
+                                <TextBlock Text="{Binding ShortName}" FontSize="11"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <!-- 기본 인터페이스 선택 라디오 -->
+                                <RadioButton IsChecked="{Binding IsDefault, Mode=TwoWay}"
+                                             GroupName="DefaultNic"
+                                             VerticalAlignment="Center"
+                                             ToolTip="패킷의 Interface가 Default이거나 미지정일 때 사용할 인터페이스"
+                                             Content="기본" FontSize="10"
+                                             Foreground="#88CCFF"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DockPanel>
+
+        <!-- ── Options row (주기 / 예상 / Repeat) ── -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,2,8,2" Height="28">
+            <TextBlock Text="주기 (ms):" VerticalAlignment="Center"
+                       Foreground="{StaticResource ForegroundBrush}" Margin="0,0,4,0"/>
+            <TextBox Width="70" VerticalAlignment="Center"
+                     Text="{Binding CyclePeriodMs, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Text="예상 (ms):" VerticalAlignment="Center"
+                       Foreground="{StaticResource ForegroundBrush}" Margin="10,0,4,0"/>
+            <TextBlock Text="{Binding EstimatedTimeMs}"
+                       Foreground="#88CCFF" VerticalAlignment="Center" MinWidth="80"/>
+            <CheckBox Content="Repeat"
+                      IsChecked="{Binding RepeatEnabled}"
+                      Foreground="{StaticResource ForegroundBrush}"
+                      VerticalAlignment="Center" Margin="10,0,0,0"/>
+        </StackPanel>
+
+        <!-- ── Send buttons row ── -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,2,8,4" Height="32">
+            <Button Content="{Binding SendSelectedLabel}"
+                    Padding="12,5" MinWidth="140" Margin="0,0,6,0"
+                    Command="{Binding SendSelectedCommand}">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSendingSelected}" Value="True">
+                                <Setter Property="Background"  Value="#AA2222"/>
+                                <Setter Property="BorderBrush" Value="#CC3333"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            <Button Content="{Binding SendListLabel}"
+                    Padding="12,5" MinWidth="140"
+                    Command="{Binding SendListCommand}">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSendingList}" Value="True">
+                                <Setter Property="Background"  Value="#AA2222"/>
+                                <Setter Property="BorderBrush" Value="#CC3333"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </StackPanel>
+
+        <!-- ── Status row ── -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="8,2,8,5" Height="22">
+
+            <!-- Sending spinner (visible only when sending) -->
+            <Border DockPanel.Dock="Left" Width="18" Height="18"
+                    VerticalAlignment="Center" Margin="0,0,6,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSending}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Ellipse Width="14" Height="14"
+                         Stroke="#7C7CFF" StrokeThickness="2.5"
+                         StrokeDashArray="2 2">
+                    <Ellipse.RenderTransform>
+                        <RotateTransform x:Name="SpinnerRotate" Angle="0" CenterX="7" CenterY="7"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation
+                                        Storyboard.TargetName="SpinnerRotate"
+                                        Storyboard.TargetProperty="Angle"
+                                        From="0" To="360" Duration="0:0:0.8"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+            </Border>
+
+            <!-- Idle dot (visible when not sending) -->
+            <Ellipse DockPanel.Dock="Left" Width="8" Height="8"
+                     Fill="#55556A" VerticalAlignment="Center" Margin="3,0,9,0">
+                <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSending}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Ellipse.Style>
+            </Ellipse>
+
+            <!-- Stats -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Start: "  Foreground="{StaticResource MutedForeground}" FontSize="10"/>
+                <TextBlock Text="{Binding StartTime}" Foreground="{StaticResource ForegroundBrush}" FontSize="10" Margin="0,0,14,0"/>
+                <TextBlock Text="End: "    Foreground="{StaticResource MutedForeground}" FontSize="10"/>
+                <TextBlock Text="{Binding EndTime}"   Foreground="{StaticResource ForegroundBrush}" FontSize="10" Margin="0,0,14,0"/>
+                <TextBlock Text="Cycle: "   Foreground="{StaticResource MutedForeground}" FontSize="10"/>
+                <TextBlock Text="{Binding CycleTime}"   Foreground="{StaticResource ForegroundBrush}" FontSize="10" Margin="0,0,14,0"/>
+
+                <!-- 초과 / 여유 label (changes dynamically) -->
+                <TextBlock Text="{Binding PassResultLabel}" FontSize="10" Margin="0,0,2,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource MutedForeground}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsOverrun}" Value="True">
+                                    <Setter Property="Foreground" Value="#FF4444"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsOverrun}" Value="False">
+                                    <Setter Property="Foreground" Value="#44CC44"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock Text="{Binding PassResultValue}" FontSize="10" Margin="0,0,14,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsOverrun}" Value="True">
+                                    <Setter Property="Foreground" Value="#FF4444"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsOverrun}" Value="False">
+                                    <Setter Property="Foreground" Value="#44CC44"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Text="Packets: " Foreground="{StaticResource MutedForeground}" FontSize="10"/>
+                <TextBlock Text="{Binding SentPackets}" Foreground="{StaticResource ForegroundBrush}" FontSize="10" Margin="0,0,14,0"/>
+                <TextBlock Text="Bytes: "   Foreground="{StaticResource MutedForeground}" FontSize="10"/>
+                <TextBlock Text="{Binding SentBytes}"   Foreground="{StaticResource ForegroundBrush}" FontSize="10"/>
+            </StackPanel>
+        </DockPanel>
+
+    </DockPanel>
+</UserControl>

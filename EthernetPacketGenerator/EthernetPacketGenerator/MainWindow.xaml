@@ -1,0 +1,423 @@
+<Window x:Class="EthernetPacketGenerator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:EthernetPacketGenerator.ViewModels"
+        xmlns:views="clr-namespace:EthernetPacketGenerator.Views"
+        Title="Ethernet Packet Generator &amp; TSN Switch Inspector"
+        Icon="Assets/app.ico"
+        Width="1680" Height="1000"
+        MinWidth="1200" MinHeight="800"
+        Background="{StaticResource BackgroundBrush}"
+        Foreground="{StaticResource ForegroundBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        RenderOptions.BitmapScalingMode="NearestNeighbor">
+
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+
+    <Window.Resources>
+        <!-- Tab item style: custom dark header -->
+        <Style x:Key="NavTabItem" TargetType="TabItem">
+            <Setter Property="Padding" Value="18,9"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Foreground" Value="#8899BB"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd"
+                                Background="Transparent"
+                                BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#12FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <StatusBar DockPanel.Dock="Bottom" Height="22">
+            <StatusBarItem>
+                <TextBlock Text="{Binding SendVM.StartTime}" FontSize="11"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock FontSize="11">
+                    <Run Text="Packets: "/>
+                    <Run Text="{Binding PacketListVM.Sequence.Count, Mode=OneWay}"/>
+                </TextBlock>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- ══ Main Tab Navigation ══════════════════════════════════════════ -->
+        <TabControl SelectedIndex="{Binding SelectedTabIndex}"
+                    Background="{StaticResource BackgroundBrush}"
+                    BorderThickness="0">
+
+            <TabControl.Resources>
+                <Style TargetType="TabPanel">
+                    <Setter Property="Background" Value="#0D1117"/>
+                </Style>
+            </TabControl.Resources>
+
+            <!-- ── Tab 0: Packet Generator ───────────────────────────── -->
+            <TabItem Header="  Packet Generator  " Style="{StaticResource NavTabItem}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="900"/>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="180" MinWidth="150"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Grid.Column="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="400"/>
+                            <RowDefinition Height="5"/>
+                            <RowDefinition Height="320" MinHeight="220"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- BlockBuilder + HexDump / TreeDecode -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="350"/>
+                                <ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="*" MinWidth="300"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="90" MinHeight="70"/>
+                                    <RowDefinition Height="5"/>
+                                    <RowDefinition Height="*" MinHeight="200"/>
+                                </Grid.RowDefinitions>
+
+                                <views:BlockBuilderView Grid.Row="0" x:Name="BlockBuilder" DataContext="{Binding BlockBuilderVM}"/>
+                                <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+                                <views:ProtocolSettingsView Grid.Row="2" DataContext="{Binding BlockBuilderVM.SelectedBlock}"/>
+                            </Grid>
+
+                            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+
+                            <Grid Grid.Column="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="160" MinHeight="80"/>
+                                    <RowDefinition Height="5"/>
+                                    <RowDefinition Height="*" MinHeight="120"/>
+                                </Grid.RowDefinitions>
+
+                                <views:HexDumpView Grid.Row="0" DataContext="{Binding HexDumpVM}"/>
+                                <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+                                <views:TreeDecodeView Grid.Row="2" DataContext="{Binding TreeDecodeVM}"/>
+                            </Grid>
+                        </Grid>
+
+                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+
+                        <!-- PacketList — Send 버튼 없이 패킷 조작만 -->
+                        <views:PacketListView Grid.Row="2" DataContext="{Binding PacketListVM}"
+                                              ShowSendControls="False"/>
+                    </Grid>
+
+                    <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="200"/>
+                            <RowDefinition Height="5"/>
+                            <RowDefinition Height="298" MinHeight="100"/>
+                        </Grid.RowDefinitions>
+
+                        <views:ProtocolPaletteView Grid.Row="0" x:Name="ProtocolPalette" DataContext="{Binding BlockBuilderVM}"/>
+                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+                        <views:EventPaletteView Grid.Row="2" DataContext="{Binding PacketListVM}"/>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="  Scenario Lab  " Style="{StaticResource NavTabItem}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="520" MinWidth="320"/>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="*" MinWidth="380"/>
+                        <ColumnDefinition Width="5"/>
+                        <ColumnDefinition Width="185" MinWidth="150"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Test Cases panel -->
+                    <views:TestCaseManagerView Grid.Column="0" DataContext="{Binding TestCaseMgrVM}"/>
+                    <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+
+                    <!-- Events palette (right column) -->
+                    <views:EventPaletteView Grid.Column="4" DataContext="{Binding PacketListVM}"/>
+                    <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+
+                    <!-- Test Sequence + Terminal -->
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="200"/>
+                            <RowDefinition Height="6"/>
+                            <RowDefinition Height="460" MinHeight="240"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Test Sequence list (Send 버튼 포함) -->
+                        <views:PacketListView Grid.Row="0" DataContext="{Binding PacketListVM}"/>
+
+                        <!-- GridSplitter handle -->
+                        <GridSplitter Grid.Row="1"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      Background="{StaticResource SurfaceAltBrush}"
+                                      BorderBrush="{StaticResource BorderBrush}"
+                                      ResizeDirection="Rows"
+                                      ResizeBehavior="PreviousAndNext"
+                                      Cursor="SizeNS">
+                            <GridSplitter.Template>
+                                <ControlTemplate TargetType="GridSplitter">
+                                    <Border Background="{StaticResource SurfaceAltBrush}"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="0,1">
+                                        <TextBlock Text="· · · · ·"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource BorderBrush}"
+                                                   FontSize="9"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </GridSplitter.Template>
+                        </GridSplitter>
+
+                        <!-- Terminal -->
+                        <Border Grid.Row="2"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,1,0,0"
+                                ClipToBounds="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- 헤더 + Clear -->
+                                <DockPanel Grid.Row="0"
+                                           Background="{StaticResource SurfaceAltBrush}"
+                                           LastChildFill="False">
+                                    <TextBlock DockPanel.Dock="Left"
+                                               Text="TERMINAL"
+                                               Style="{StaticResource PanelHeader}"/>
+                                    <Button DockPanel.Dock="Right"
+                                            Content="Clear" Width="50"
+                                            Margin="4,2"
+                                            Command="{Binding ClearSequenceTerminalCommand}"/>
+                                </DockPanel>
+
+                                <!-- 출력 텍스트 -->
+                                <ScrollViewer Grid.Row="1"
+                                              x:Name="SequenceTerminalScroller"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <TextBox Text="{Binding SequenceTerminalLog, Mode=OneWay}"
+                                             IsReadOnly="True"
+                                             TextWrapping="NoWrap"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             FontFamily="Consolas"
+                                             FontSize="12"
+                                             Foreground="{StaticResource ForegroundBrush}"
+                                             Padding="6"/>
+                                </ScrollViewer>
+
+                                <!-- 입력 바 -->
+                                <Border Grid.Row="2"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        Padding="4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="&gt;"
+                                                   Foreground="{StaticResource AccentBrush}"
+                                                   FontFamily="Consolas" FontSize="13"
+                                                   VerticalAlignment="Center" Margin="4,0,6,0"/>
+                                        <TextBox Grid.Column="1"
+                                                 x:Name="ScenarioInputBox"
+                                                 Text="{Binding HyperTerminalVM.InputText, UpdateSourceTrigger=PropertyChanged}"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 VerticalAlignment="Center"
+                                                 KeyDown="ScenarioInputBox_KeyDown"/>
+                                        <Button Grid.Column="2" Content="전송" Width="60" Margin="4,0,0,0"
+                                                Command="{Binding HyperTerminalVM.SendLineCommand}"/>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="  Capture Address  " Style="{StaticResource NavTabItem}">
+                <views:NdjsonBridgeView DataContext="{Binding NdjsonBridgeVM}"/>
+            </TabItem>
+
+            <!-- ── Tab 1: Capture (Wireshark-style) ─────────────────── -->
+            <TabItem Header="  Capture  " Style="{StaticResource NavTabItem}">
+                <views:CaptureView DataContext="{Binding CaptureVM}"/>
+            </TabItem>
+
+            <!-- ── Tab 2: HyperTerminal ──────────────────────────────── -->
+            <TabItem Header="  HyperTerminal  " Style="{StaticResource NavTabItem}">
+                <views:HyperTerminalView DataContext="{Binding HyperTerminalVM}"/>
+            </TabItem>
+
+            <!-- ── Tab: Settings ─────────────────────────────────────── -->
+            <TabItem Header="  Settings  " Style="{StaticResource NavTabItem}">
+                <ScrollViewer Background="{StaticResource BackgroundBrush}"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="32,28,32,28" MaxWidth="560">
+
+                        <TextBlock Text="Settings"
+                                   Foreground="{StaticResource AccentBrush}"
+                                   FontSize="18" FontWeight="SemiBold" Margin="0,0,0,20"/>
+
+                        <!-- Worker Connection Card -->
+                        <Border Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="18,14" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Worker Connection"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Server URL:"
+                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SettingsVM.ServerUrl}"
+                                               Foreground="{StaticResource ForegroundBrush}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Worker ID:"
+                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SettingsVM.WorkerId}"
+                                               Foreground="{StaticResource ForegroundBrush}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Status:"
+                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SettingsVM.ConnectionStatus}"
+                                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#FF8844"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SettingsVM.IsConnected}" Value="True">
+                                                        <Setter Property="Foreground" Value="#44CC88"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+
+                                <Button Content="Reconnect" Width="100" HorizontalAlignment="Left"
+                                        Command="{Binding SettingsVM.ReconnectCommand}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Start Options Card -->
+                        <Border Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="18,14" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Launch Options"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11"
+                                           Foreground="{StaticResource MutedForeground}">
+                                    Server URL and Worker ID are set via command-line arguments or environment variables.
+                                </TextBlock>
+                                <TextBlock Margin="0,8,0,4" FontSize="11"
+                                           Foreground="{StaticResource MutedForeground}">
+                                    <Run Text="--server " Foreground="#88CCFF"/><Run Text="ws://&lt;host&gt;:8080"/>
+                                </TextBlock>
+                                <TextBlock FontSize="11" Foreground="{StaticResource MutedForeground}">
+                                    <Run Text="--worker-id " Foreground="#88CCFF"/><Run Text="local"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- File Paths Card -->
+                        <Border Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="18,14">
+                            <StackPanel>
+                                <TextBlock Text="Data Files"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                <TextBlock TextWrapping="Wrap" FontSize="11"
+                                           Foreground="{StaticResource MutedForeground}">
+                                    Test case sequences are saved as JSON in the application directory.
+                                </TextBlock>
+                                <TextBlock Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{StaticResource MutedForeground}">
+                                    <Run Text="Auto-save: " Foreground="#88CCFF"/>
+                                    <Run Text="test_cases.json"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>

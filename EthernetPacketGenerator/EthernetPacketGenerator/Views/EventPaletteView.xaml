@@ -1,0 +1,229 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.EventPaletteView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel Background="{StaticResource SurfaceAltBrush}">
+        <TextBlock DockPanel.Dock="Top" Text="EVENTS" Style="{StaticResource PanelHeader}"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="6,6,6,6">
+
+                <TextBlock Text="클릭하여 선택 항목 다음에 삽입:"
+                           Foreground="{StaticResource MutedForeground}" FontSize="10" Margin="0,0,0,6"/>
+
+                <!-- ⏱ Delay -->
+                <Border Background="#AA2222" BorderBrush="#CC3333" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="DelayTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="⏱  Delay" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="딜레이 삽입" Foreground="#FFCCCC" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ✎ RegWrite -->
+                <Border Background="#1A3A55" BorderBrush="#2266AA" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="RegWriteTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="✎  Reg Write" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="레지스터 직접 쓰기" Foreground="#AACCEE" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ⤷ RegRead -->
+                <Border Background="#1A3A55" BorderBrush="#2266AA" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="RegReadTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="⤷  Reg Read" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="레지스터 직접 읽기" Foreground="#AACCEE" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ⏳ RegWaitFor -->
+                <Border Background="#2A1A55" BorderBrush="#6644AA" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="RegWaitForTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="⏳  Reg WaitFor" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="레지스터 비트 조건 대기" Foreground="#CCAAEE" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 📋 FdbWrite -->
+                <Border Background="#1A3A2A" BorderBrush="#226644" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="FdbWriteTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="📋  FDB Write" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="FDB 엔트리 쓰기" Foreground="#AAEEBB" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 🔍 FdbRead -->
+                <Border Background="#1A3A2A" BorderBrush="#226644" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="FdbReadTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="🔍  FDB Read" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="FDB 읽기" Foreground="#AAEEBB" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ⏳ FdbWaitFor -->
+                <Border Background="#2A1A55" BorderBrush="#6644AA" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="FdbWaitForTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="⏳  FDB WaitFor" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="비트 조건 충족까지 대기" Foreground="#CCAAEE" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 🗑 FdbFlush -->
+                <Border Background="#3A1A1A" BorderBrush="#AA3333" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,8"
+                        MouseLeftButtonUp="FdbFlushTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="🗑  FDB Flush" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="전체 MAC 테이블 초기화" Foreground="#FFAAAA" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 📡 CaptureVerify -->
+                <Border Background="#1A3A4A" BorderBrush="#2288BB" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="CaptureVerifyTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="📡  Capture Verify" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="패킷 수신 검증 (PASS/FAIL)" Foreground="#AADDEE" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- → SerialSend -->
+                <Border Background="#2A3A1A" BorderBrush="#558822" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,4"
+                        MouseLeftButtonUp="SerialSendTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="→  Serial Send" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="시리얼 포트로 전송" Foreground="#BBEEBB" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ⏳ SerialVerify -->
+                <Border Background="#2A2A1A" BorderBrush="#AA8822" BorderThickness="1"
+                        CornerRadius="3" Padding="8,5" Cursor="Hand" Margin="0,0,0,8"
+                        MouseLeftButtonUp="SerialVerifyTile_Click">
+                    <StackPanel>
+                        <TextBlock Text="⏳  Serial Verify" Foreground="White" FontWeight="SemiBold" FontSize="12"/>
+                        <TextBlock Text="시리얼 수신 패턴 대기 (PASS/FAIL)" Foreground="#EEDDAA" FontSize="9" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ── 이벤트 편집 영역 ─────────────────────────────────── -->
+                <StackPanel x:Name="EventEditor" Visibility="Collapsed">
+                    <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="EditorTitle" Text="이벤트 편집"
+                               Foreground="{StaticResource MutedForeground}" FontSize="10" Margin="0,0,0,6"/>
+
+                    <!-- Delay 편집 -->
+                    <StackPanel x:Name="DelayPanel" Visibility="Collapsed">
+                        <TextBlock Text="Delay (ms):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="DelayMsBox" Margin="0,3,0,0" TextChanged="DelayMsBox_TextChanged"/>
+                    </StackPanel>
+
+                    <!-- RegWrite / RegRead 편집 공통 (Address) -->
+                    <StackPanel x:Name="RegPanel" Visibility="Collapsed">
+                        <TextBlock Text="Address (절대, hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="RegAddressBox" Margin="0,3,0,6" TextChanged="RegAddressBox_TextChanged"/>
+                        <StackPanel x:Name="RegValuePanel" Visibility="Collapsed">
+                            <TextBlock Text="Value (hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                            <TextBox x:Name="RegValueBox" Margin="0,3,0,0" TextChanged="RegValueBox_TextChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- FdbRead 편집 — hash 기반 (MAC + VLAN으로 조회) -->
+                    <StackPanel x:Name="FdbReadHashPanel" Visibility="Collapsed">
+                        <TextBlock Text="MAC (XX:XX:XX:XX:XX:XX):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="FdbRHashMacBox" Margin="0,3,0,6" TextChanged="FdbRHashMacBox_TextChanged"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                            <CheckBox x:Name="FdbRHashVlanValidBox" Content="VLAN"
+                                      Foreground="{StaticResource ForegroundBrush}" FontSize="11"
+                                      Checked="FdbRHashVlanValid_Changed" Unchecked="FdbRHashVlanValid_Changed"/>
+                            <TextBox x:Name="FdbRHashVlanIdBox" Width="60" Margin="8,0,0,0"
+                                     TextChanged="FdbRHashVlanIdBox_TextChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- RegWaitFor 편집 -->
+                    <StackPanel x:Name="RegWaitPanel" Visibility="Collapsed">
+                        <TextBlock Text="Address (절대, hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="WaitAddressBox" Margin="0,3,0,6" TextChanged="WaitAddressBox_TextChanged"/>
+                        <TextBlock Text="Mask (hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="WaitMaskBox" Margin="0,3,0,6" TextChanged="WaitMaskBox_TextChanged"/>
+                        <TextBlock Text="Expected (hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="WaitExpectedBox" Margin="0,3,0,6" TextChanged="WaitExpectedBox_TextChanged"/>
+                        <TextBlock Text="Timeout (ms):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="WaitTimeoutBox" Margin="0,3,0,0" TextChanged="WaitTimeoutBox_TextChanged"/>
+                    </StackPanel>
+
+                    <!-- FdbWrite 편집 — hash 기반 (MAC + Port만 필요, 버킷/슬롯 자동 배정) -->
+                    <StackPanel x:Name="FdbWritePanel" Visibility="Collapsed">
+                        <TextBlock Text="MAC (XX:XX:XX:XX:XX:XX):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="FdbMacBox" Margin="0,3,0,6" TextChanged="FdbMacBox_TextChanged"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <CheckBox x:Name="FdbVlanValidBox" Content="VLAN"
+                                      Foreground="{StaticResource ForegroundBrush}" FontSize="11"
+                                      Checked="FdbVlanValid_Changed" Unchecked="FdbVlanValid_Changed"/>
+                            <TextBox x:Name="FdbVlanIdBox" Width="60" Margin="8,0,0,0"
+                                     TextChanged="FdbVlanIdBox_TextChanged"/>
+                        </StackPanel>
+                        <TextBlock Text="Port:" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="FdbPortBox" Margin="0,3,0,0" TextChanged="FdbPortBox_TextChanged"/>
+                    </StackPanel>
+
+                    <!-- FdbRead / FdbWaitFor 편집 공통 -->
+                    <StackPanel x:Name="FdbReadPanel" Visibility="Collapsed">
+                        <TextBlock Text="Bucket (0~1023):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="FdbRBucketBox" Margin="0,3,0,6" TextChanged="FdbRBucketBox_TextChanged"/>
+                        <TextBlock Text="Slot Bitmap (hex):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="FdbRSlotBox" Margin="0,3,0,6" TextChanged="FdbRSlotBox_TextChanged"/>
+                        <StackPanel x:Name="FdbWaitTimeoutPanel" Visibility="Collapsed">
+                            <TextBlock Text="Timeout (ms):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                            <TextBox x:Name="FdbRTimeoutBox" Margin="0,3,0,0" TextChanged="FdbRTimeoutBox_TextChanged"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- CaptureVerify 편집 -->
+                    <StackPanel x:Name="CaptureVerifyPanel" Visibility="Collapsed">
+                        <TextBlock Text="Interface (비워두면 any):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="CaptureIfaceBox" Margin="0,3,0,6" TextChanged="CaptureIfaceBox_TextChanged"/>
+                        <TextBlock Text="Filter (예: udp, ip:192.168.1.1, mac:aa:bb):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="CaptureFilterBox" Margin="0,3,0,6" TextChanged="CaptureFilterBox_TextChanged"/>
+                        <TextBlock Text="Expected count (최소 수신 수):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="CaptureExpectedBox" Margin="0,3,0,6" TextChanged="CaptureExpectedBox_TextChanged"/>
+                        <TextBlock Text="Timeout (ms):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="CaptureTimeoutBox" Margin="0,3,0,0" TextChanged="CaptureTimeoutBox_TextChanged"/>
+                    </StackPanel>
+
+                    <!-- SerialSend 편집 -->
+                    <StackPanel x:Name="SerialSendPanel" Visibility="Collapsed">
+                        <TextBlock Text="Text (문자열 전송):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="SerialSendTextBox" Margin="0,3,0,6" TextChanged="SerialSendTextBox_TextChanged"/>
+                        <TextBlock Text="Hex bytes (대체, 예: 0A 0D FF):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="SerialSendHexBox" Margin="0,3,0,0" TextChanged="SerialSendHexBox_TextChanged"/>
+                    </StackPanel>
+
+                    <!-- SerialVerify 편집 -->
+                    <StackPanel x:Name="SerialVerifyPanel" Visibility="Collapsed">
+                        <TextBlock Text="Expected pattern (정규식 가능):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="SerialVerifyTextBox" Margin="0,3,0,6" TextChanged="SerialVerifyTextBox_TextChanged"/>
+                        <TextBlock Text="Timeout (ms):" Foreground="{StaticResource ForegroundBrush}" FontSize="11"/>
+                        <TextBox x:Name="SerialVerifyTimeoutBox" Margin="0,3,0,0" TextChanged="SerialVerifyTimeoutBox_TextChanged"/>
+                    </StackPanel>
+
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

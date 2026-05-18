@@ -1,0 +1,77 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.TreeDecodeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:svc="clr-namespace:EthernetPacketGenerator.Services">
+    <DockPanel Background="{StaticResource SurfaceBrush}">
+        <TextBlock DockPanel.Dock="Top" Text="DECODE TREE (read-only)" Style="{StaticResource PanelHeader}"/>
+
+        <TreeView ItemsSource="{Binding Roots}"
+                  IsEnabled="True"
+                  Background="{StaticResource SurfaceBrush}">
+            <TreeView.ItemTemplate>
+                <HierarchicalDataTemplate DataType="{x:Type svc:TreeNode}"
+                                          ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                        <!-- Severity indicator dot: red=Error, orange=Warning, transparent=None -->
+                        <Ellipse Width="7" Height="7" Margin="0,0,5,0" VerticalAlignment="Center"
+                                 Fill="{Binding Severity, Converter={StaticResource SeverityToColor}}"/>
+                        <TextBlock FontWeight="SemiBold" FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource ForegroundBrush}"
+                                   Text="{Binding Label}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <!-- Bold red for error/warn labels like [ERROR] [WARN] -->
+                                        <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                            <Setter Property="Foreground" Value="#FF5555"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                            <Setter Property="Foreground" Value="#FFAA33"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock VerticalAlignment="Center"
+                                   FontSize="11" Margin="6,0,0,0"
+                                   Text="{Binding Value}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource MutedForeground}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                            <Setter Property="Foreground" Value="#FF8888"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                            <Setter Property="Foreground" Value="#FFCC66"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Foreground="#445566" FontSize="10" Margin="6,0,0,0"
+                                   VerticalAlignment="Center">
+                            <Run Text="@"/>
+                            <Run Text="{Binding ByteOffset, Mode=OneWay}"/>
+                            <Run Text="+"/>
+                            <Run Text="{Binding ByteLength, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+            <TreeView.ItemContainerStyle>
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="Foreground" Value="{StaticResource ForegroundBrush}"/>
+                    <Setter Property="IsExpanded" Value="True"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{StaticResource SelectionBrush}"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </TreeView.ItemContainerStyle>
+        </TreeView>
+    </DockPanel>
+</UserControl>

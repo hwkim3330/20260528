@@ -1,0 +1,94 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.HexDumpView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <DockPanel Background="{StaticResource SurfaceBrush}">
+        <TextBlock DockPanel.Dock="Top" Text="HEX DUMP (editable)" Style="{StaticResource PanelHeader}"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto"
+                      x:Name="HexScroller">
+            <!-- ListView enables real UI virtualization (VirtualizingStackPanel by default) -->
+            <ListView ItemsSource="{Binding Rows}"
+                      BorderThickness="0"
+                      Background="Transparent"
+                      ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                      SelectionMode="Single">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListViewItem">
+                                    <ContentPresenter/>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <!-- Each row: offset | 16 hex cells | ascii -->
+                        <Grid Margin="0,0,0,1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="46"/>   <!-- offset -->
+                                <ColumnDefinition Width="*"/>    <!-- hex cells -->
+                                <ColumnDefinition Width="130"/>  <!-- ascii -->
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Offset label -->
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding OffsetText}"
+                                       Foreground="{StaticResource HexOffsetBrush}"
+                                       FontFamily="Consolas" FontSize="11"
+                                       Padding="4,0,4,0" VerticalAlignment="Center"/>
+
+                            <!-- Hex cells -->
+                            <ItemsControl Grid.Column="1"
+                                          ItemsSource="{Binding Cells}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding IsHighlighted, Converter={StaticResource BoolToHighlight}}"
+                                                Margin="1,0" CornerRadius="2">
+                                            <TextBox Width="22" Height="18"
+                                                     Text="{Binding HexText, UpdateSourceTrigger=LostFocus}"
+                                                     FontFamily="Consolas" FontSize="11"
+                                                     MaxLength="2"
+                                                     Padding="1,0"
+                                                     BorderThickness="0"
+                                                     Background="Transparent"
+                                                     Foreground="{StaticResource ForegroundBrush}"
+                                                     HorizontalContentAlignment="Center"
+                                                     VerticalContentAlignment="Center"
+                                                     PreviewKeyDown="HexCell_PreviewKeyDown"
+                                                     GotFocus="HexCell_GotFocus"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- ASCII column -->
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding AsciiText}"
+                                       FontFamily="Consolas" FontSize="11"
+                                       Foreground="{StaticResource MutedForeground}"
+                                       Padding="8,0,4,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

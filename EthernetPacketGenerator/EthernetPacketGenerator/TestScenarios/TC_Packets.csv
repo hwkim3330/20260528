@@ -1,0 +1,5 @@
+TC_ID,FrameRef,Layer,Protocol,Field,Value
+1,Packet_0,1,ETH,Destination MAC,C8:4D:44:25:2D:38
+1,Packet_0,1,ETH,Source MAC,C8:4D:44:25:2D:37
+1,Packet_0,1,ETH,EtherType,
+1,Packet_0,2,RAW,Data,0x12345678

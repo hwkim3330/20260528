@@ -1,0 +1,39 @@
+# ── C# build outputs ──────────────────────────────────────────────────────────
+**/bin/
+**/obj/
+**/publish/
+**/.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ── Node.js ───────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+.npm
+
+# ── Runtime data (generated, not source) ──────────────────────────────────────
+server/logs/
+server/reports/
+server/server.log
+*.log
+*.tcs
+
+# ── Zip / archive files ───────────────────────────────────────────────────────
+*.zip
+*.7z
+*.tar.gz
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Rider / JetBrains ────────────────────────────────────────────────────────
+.idea/
+
+# ── Local env ────────────────────────────────────────────────────────────────
+.env
+.env.local

@@ -1,0 +1,191 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.TestCaseManagerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+    <DockPanel Background="{StaticResource SurfaceAltBrush}">
+
+        <!-- ── 헤더 ────────────────────────────────────────────────── -->
+        <DockPanel DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}" Height="28">
+            <TextBlock Text="TEST CASES" VerticalAlignment="Center" Padding="6,0"
+                       FontWeight="SemiBold" FontSize="11"
+                       Foreground="{StaticResource ForegroundBrush}"/>
+        </DockPanel>
+
+        <!-- ── 하단 툴바 ─────────────────────────────────────────────── -->
+        <StackPanel DockPanel.Dock="Bottom" Margin="4,2,4,4">
+            <!-- 그룹/TC 조작 -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                <Button Content="+ Group" Height="22" Padding="6,0"
+                        ToolTip="새 그룹 추가" Command="{Binding AddGroupCommand}"/>
+                <Button Content="+ TC" Height="22" Padding="6,0" Margin="3,0,0,0"
+                        ToolTip="선택한 그룹에 TC 추가" Command="{Binding AddTcCommand}"/>
+                <Button Content="−" Width="26" Height="22" Margin="3,0,0,0"
+                        ToolTip="선택한 TC 또는 그룹 삭제" Command="{Binding DeleteCommand}"/>
+            </StackPanel>
+            <!-- 파일 조작 -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                <Button Content="Open JSON" Height="22" Padding="6,0"
+                        ToolTip="JSON 파일에서 불러오기" Command="{Binding LoadFileCommand}"/>
+                <Button Content="Save JSON" Height="22" Padding="6,0" Margin="3,0,0,0"
+                        ToolTip="JSON 파일로 저장 (내보내기)" Command="{Binding SaveFileCommand}"/>
+                <Button Content="Import CSV" Height="22" Padding="6,0" Margin="3,0,0,0"
+                        ToolTip="TC.csv 임포트" Command="{Binding ImportTcCsvCommand}"/>
+            </StackPanel>
+            <!-- 즉시 저장 (자동저장 대기 없이) -->
+            <Button Content="▸ Save Now" Height="24"
+                    HorizontalAlignment="Stretch"
+                    Padding="6,2" FontSize="11"
+                    ToolTip="현재 시퀀스를 TC에 즉시 저장 (자동저장은 편집 후 1.5s)"
+                    Command="{Binding SaveTcCommand}"/>
+        </StackPanel>
+
+        <!-- ── 상태 메시지 ───────────────────────────────────────────── -->
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Status}"
+                   FontSize="9" Foreground="#88AACC"
+                   Margin="4,0,4,2" TextTrimming="CharacterEllipsis"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Groups}"
+                          Tag="{Binding DataContext, ElementName=Root}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+
+                            <!-- 그룹 헤더 -->
+                            <DockPanel Background="#1C2B38" Margin="0,2,0,0" Height="24"
+                                       Tag="{Binding DataContext, ElementName=Root}">
+                                <DockPanel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="시나리오 추가"
+                                                  Command="{Binding PlacementTarget.Tag.AddTcToGroupCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                        <MenuItem Header="그룹 삭제"
+                                                  Command="{Binding PlacementTarget.Tag.DeleteGroupCommand,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                            RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                    </ContextMenu>
+                                </DockPanel.ContextMenu>
+
+                                <!-- 접기/펼치기 삼각형 -->
+                                <TextBlock DockPanel.Dock="Left"
+                                           Width="22" Height="24"
+                                           TextAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="9"
+                                           Cursor="Hand"
+                                           Foreground="{StaticResource ForegroundBrush}"
+                                           MouseLeftButtonDown="Triangle_MouseLeftButtonDown">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="▶"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                    <Setter Property="Text" Value="▼"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- 그룹에 TC 추가 버튼 -->
+                                <Button DockPanel.Dock="Right"
+                                        Content="+" Width="22" Height="22"
+                                        FontSize="13" Padding="0"
+                                        ToolTip="이 그룹에 TC 추가"
+                                        Command="{Binding DataContext.AddTcToGroupCommand,
+                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"/>
+
+                                <!-- 그룹 이름 (편집 가능) -->
+                                <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="Transparent" BorderThickness="0"
+                                         FontWeight="SemiBold" FontSize="11"
+                                         VerticalAlignment="Center" Padding="2,0"
+                                         Foreground="{StaticResource ForegroundBrush}"/>
+                            </DockPanel>
+
+                            <!-- TC 목록 (펼쳐진 경우에만 표시) -->
+                            <ItemsControl ItemsSource="{Binding TestCases}"
+                                          Tag="{Binding DataContext, ElementName=Root}">
+                                <ItemsControl.Style>
+                                    <Style TargetType="ItemsControl">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ItemsControl.Style>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Padding="20,2,4,2"
+                                                HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Stretch"
+                                                Cursor="Hand"
+                                                Command="{Binding DataContext.SelectTcCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                            <Button.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="삭제"
+                                                              Command="{Binding PlacementTarget.Tag.DeleteTcCommand,
+                                                                        RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                              CommandParameter="{Binding PlacementTarget.DataContext,
+                                                                        RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Background" Value="Transparent"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#2A2A50"/>
+                                                        </Trigger>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Background"
+                                                                    Value="{StaticResource SelectionBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                     Background="Transparent" BorderThickness="0"
+                                                     Foreground="{StaticResource ForegroundBrush}"
+                                                     FontSize="11" Padding="0">
+                                                <TextBox.Style>
+                                                    <Style TargetType="TextBox">
+                                                        <Setter Property="IsHitTestVisible" Value="False"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="IsHitTestVisible" Value="True"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBox.Style>
+                                            </TextBox>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+    </DockPanel>
+</UserControl>

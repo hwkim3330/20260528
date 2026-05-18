@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KETI Ethernet Packet Lab</title>
+  <link rel="icon" type="image/png" href="/keti.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="toastTray" class="toast-tray" aria-live="polite"></div>
+
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-box"><img src="/keti.png" alt="KETI"></div>
+        <div>
+          <p class="eyebrow">KETI Ethernet Packet Lab</p>
+          <h1>Packet Generator, Capture, HyperTerminal Console</h1>
+        </div>
+      </div>
+      <div class="server-card">
+        <span id="serverState" class="state-dot"></span>
+        <div>
+          <strong id="status">Connecting...</strong>
+          <span>http://localhost:8080</span>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Main views">
+      <button class="tab active" data-view="senderView">Sender</button>
+      <button class="tab" data-view="captureView">Capture</button>
+      <button class="tab" data-view="registerView">Registers/FDB</button>
+      <button class="tab" data-view="testcaseView">Test Cases</button>
+      <button class="tab" data-view="serialView">HyperTerminal</button>
+      <button class="tab" data-view="logsView">Logs/API</button>
+    </nav>
+
+    <section id="senderView" class="view active">
+      <aside class="panel side-panel">
+        <div class="panel-head">
+          <h2>Sender Interfaces</h2>
+          <button id="refreshAll" class="small">Refresh</button>
+        </div>
+        <div id="senderInterfaces" class="chip-list"></div>
+      </aside>
+
+      <section class="panel main-panel">
+        <div class="panel-head">
+          <h2>Frame Builder</h2>
+          <div class="actions">
+            <button id="build" class="secondary">Preview</button>
+            <button id="send" class="primary">Send Packet</button>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>Protocol
+            <select id="protocol">
+              <option value="udp">UDP over IPv4</option>
+              <option value="icmp">ICMP Echo</option>
+              <option value="arp">ARP</option>
+              <option value="raw">Raw EtherType</option>
+            </select>
+          </label>
+          <label>Destination MAC<input id="dstMac" value="ff:ff:ff:ff:ff:ff"></label>
+          <label>Source MAC<input id="srcMac" placeholder="auto from selected NIC"></label>
+          <label>Source IP<input id="srcIp" value="192.168.1.10"></label>
+          <label>Destination IP<input id="dstIp" value="192.168.1.20"></label>
+          <label>Source Port<input id="srcPort" type="number" min="1" max="65535" value="12345"></label>
+          <label>Destination Port<input id="dstPort" type="number" min="1" max="65535" value="50000"></label>
+          <label>Count<input id="count" type="number" min="1" value="1"></label>
+          <label>Interval ms<input id="intervalMs" type="number" min="0" value="0"></label>
+          <label class="span-2">Payload<textarea id="payload" rows="3">Hello KETI</textarea></label>
+          <label class="check"><input id="vlanEnabled" type="checkbox"> Enable 802.1Q VLAN</label>
+          <label>VLAN ID<input id="vlanId" type="number" min="0" max="4095" value="100"></label>
+          <label>PCP<input id="vlanPriority" type="number" min="0" max="7" value="0"></label>
+        </div>
+
+        <div class="split">
+          <section class="subpanel">
+            <h3>Decoded Preview</h3>
+            <pre id="decoded">No preview yet.</pre>
+          </section>
+          <section class="subpanel">
+            <h3>Frame Bytes</h3>
+            <pre id="hexdump">No preview yet.</pre>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section id="captureView" class="view capture-layout">
+      <aside class="panel side-panel">
+        <div class="panel-head">
+          <h2>Capture Interfaces</h2>
+          <button id="captureRefresh" class="small">Refresh</button>
+        </div>
+        <p class="hint">Check multiple NICs to capture at the same time.</p>
+        <div id="captureInterfaces" class="check-list"></div>
+        <div class="stack-actions">
+          <button id="captureStart" class="primary">Start Capture</button>
+          <button id="captureStop" class="danger">Stop</button>
+          <button id="captureClear" class="secondary">Clear</button>
+        </div>
+      </aside>
+
+      <section class="panel main-panel">
+        <div class="panel-head">
+          <h2>Wireshark-style Capture</h2>
+          <div class="capture-stats">
+            <span id="captureRunning">idle</span>
+            <strong id="captureTotal">0 packets</strong>
+          </div>
+        </div>
+        <input id="captureFilter" class="filter" placeholder="Filter: udp tcp arp icmp mac:aa:bb ip:192.168 port:50000 interface text">
+        <div class="table-wrap">
+          <table class="packet-table">
+            <thead>
+              <tr>
+                <th>No.</th><th>Time</th><th>Interface</th><th>Src MAC</th><th>Dst MAC</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Len</th><th>Info</th>
+              </tr>
+            </thead>
+            <tbody id="captureRows">
+              <tr><td colspan="10" class="empty">No packets captured.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="split bottom-split">
+          <section class="subpanel">
+            <h3>Packet Details</h3>
+            <pre id="packetDetails">Select a packet.</pre>
+          </section>
+          <section class="subpanel hex">
+            <h3>Hex Bytes</h3>
+            <pre id="packetHex"></pre>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section id="serialView" class="view">
+      <section class="panel main-panel full terminal-panel">
+        <div class="panel-head">
+          <div>
+            <h2>HyperTerminal</h2>
+            <p class="hint">Control the same WPF serial terminal from the browser.</p>
+          </div>
+          <div class="terminal-status">
+            <span id="serialState">disconnected</span>
+          </div>
+        </div>
+
+        <div class="terminal-toolbar">
+          <label>Port
+            <select id="serialPort"></select>
+          </label>
+          <label>Baud
+            <select id="serialBaud"></select>
+          </label>
+          <button id="serialRefresh" class="secondary">Refresh Ports</button>
+          <button id="serialConnect" class="primary">Connect</button>
+          <button id="serialDisconnect" class="danger">Disconnect</button>
+          <button id="serialBreak" class="danger">BRK</button>
+          <button id="serialClear" class="secondary">Clear</button>
+        </div>
+
+        <pre id="serialOutput" class="terminal-output">No terminal output.</pre>
+
+        <div class="terminal-input">
+          <span>&gt;</span>
+          <input id="serialInput" placeholder="Type command and press Enter">
+          <button id="serialSend" class="primary">Send</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="registerView" class="view">
+      <section class="panel main-panel full">
+        <div class="panel-head">
+          <div>
+            <h2>Registers and FDB</h2>
+            <p class="hint">Serial connection is shared with HyperTerminal. Connect COM first, then read/write hardware registers.</p>
+          </div>
+          <button id="regStatusRefresh" class="secondary">Refresh Status</button>
+        </div>
+
+        <div class="cards register-cards">
+          <article class="action-card glass-card">
+            <h3>Raw Register Access</h3>
+            <p id="regStatus">Checking register bridge...</p>
+            <label>Offset
+              <input id="regOffset" value="0x0000" placeholder="0x0000">
+            </label>
+            <label>Value
+              <input id="regValue" value="0x00000000" placeholder="0x00000000">
+            </label>
+            <div class="actions">
+              <button id="regRead" class="primary">Read</button>
+              <button id="regWrite" class="secondary">Write</button>
+            </div>
+            <pre id="regResult" class="mini-log">No register operation yet.</pre>
+          </article>
+
+          <article class="action-card glass-card">
+            <h3>FDB Entry Control</h3>
+            <p>Hash-based MAC table operations through the same register backend.</p>
+            <label>MAC
+              <input id="fdbMac" value="00:11:22:33:44:55">
+            </label>
+            <div class="form-grid compact">
+              <label>Port<input id="fdbPort" type="number" value="1" min="0"></label>
+              <label>VLAN ID<input id="fdbVlanId" type="number" value="0" min="0" max="4095"></label>
+            </div>
+            <label class="check"><input id="fdbVlanValid" type="checkbox"> VLAN valid</label>
+            <div class="actions wrap">
+              <button id="fdbRead" class="primary">Read</button>
+              <button id="fdbWrite" class="secondary">Write</button>
+              <button id="fdbDelete" class="danger">Delete</button>
+              <button id="fdbFlush" class="danger">Flush All</button>
+            </div>
+            <pre id="fdbResult" class="mini-log">No FDB operation yet.</pre>
+          </article>
+        </div>
+      </section>
+    </section>
+
+    <section id="testcaseView" class="view">
+      <aside class="panel side-panel">
+        <div class="panel-head">
+          <h2>Test Suites</h2>
+          <button id="tcRefresh" class="small">Refresh</button>
+        </div>
+        <div class="stack-actions">
+          <input id="tcGroupName" placeholder="Group name">
+          <button id="tcAddGroup" class="secondary">Add Group</button>
+        </div>
+        <div id="tcTree" class="tc-tree"></div>
+      </aside>
+      <section class="panel main-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Current Sequence</h2>
+            <p class="hint" id="tcStatus">No test case loaded.</p>
+          </div>
+          <div class="actions wrap">
+            <input id="tcName" placeholder="New TC name">
+            <button id="tcAdd" class="secondary">Add TC From Current</button>
+            <button id="tcSaveCurrent" class="secondary">Save Current To Selected</button>
+            <button id="tcRunSequence" class="primary">&#9654; Run Sequence</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Index</th><th>Kind</th><th>On</th><th>Type/Name</th><th>Address</th><th>Value</th><th>Mask</th><th>Timing</th></tr>
+            </thead>
+            <tbody id="sequenceRows">
+              <tr><td colspan="8" class="empty">No sequence loaded.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="logsView" class="view">
+      <section class="panel main-panel full">
+        <div class="panel-head">
+          <h2>Logs and API</h2>
+          <button id="refreshLogs" class="secondary">Refresh Logs</button>
+        </div>
+        <div class="api-grid">
+          <code>GET /api/health</code>
+          <code>GET /api/interfaces</code>
+          <code>POST /api/build</code>
+          <code>POST /api/send</code>
+          <code>GET /api/capture/status</code>
+          <code>POST /api/capture/start</code>
+          <code>POST /api/capture/stop</code>
+          <code>POST /api/capture/clear</code>
+          <code>GET /api/capture/packets</code>
+          <code>GET /api/serial/status</code>
+          <code>POST /api/serial/connect</code>
+          <code>POST /api/serial/disconnect</code>
+          <code>POST /api/serial/send</code>
+          <code>POST /api/serial/break</code>
+          <code>POST /api/serial/clear</code>
+          <code>GET /api/register/status</code>
+          <code>POST /api/register/read</code>
+          <code>POST /api/register/write</code>
+          <code>POST /api/fdb/read</code>
+          <code>POST /api/fdb/write</code>
+          <code>POST /api/fdb/delete</code>
+          <code>POST /api/fdb/flush</code>
+          <code>GET /api/testcases/status</code>
+          <code>POST /api/testcases/add-group</code>
+          <code>POST /api/testcases/add</code>
+          <code>POST /api/testcases/select</code>
+          <code>POST /api/testcases/save-current</code>
+          <code>POST /api/testcases/delete</code>
+          <code>GET /api/sequence/status</code>
+          <code>POST /api/sequence/run</code>
+          <code>GET /api/logs</code>
+        </div>
+        <pre id="logsBox" class="logbox">No logs loaded.</pre>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

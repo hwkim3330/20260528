@@ -1,0 +1,196 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.NdjsonBridgeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BackgroundBrush}">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="220"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{StaticResource SurfaceAltBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12"
+                Margin="0,0,0,10">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="Refresh NICs" Width="92" Margin="4,0" Command="{Binding RefreshCaptureInterfacesCommand}"/>
+                    <Button Content="Start Capture" Width="100" Margin="4,0" Command="{Binding StartCaptureCommand}"/>
+                    <Button Content="Stop" Width="62" Margin="4,0" Command="{Binding StopCaptureCommand}"/>
+                    <Button Content="Clear Capture" Width="94" Margin="4,0" Command="{Binding ClearCaptureCommand}"/>
+                </StackPanel>
+
+                <StackPanel>
+                    <TextBlock Text="Capture Address View"
+                               Foreground="{StaticResource AccentBrush}"
+                               FontSize="18"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding Capture.StatusText}"
+                               Foreground="{StaticResource MutedForeground}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="10"
+                Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox Grid.Column="0"
+                         Text="{Binding AddressText, UpdateSourceTrigger=PropertyChanged}"
+                         Height="30"
+                         VerticalContentAlignment="Center"
+                         FontFamily="Consolas"
+                         Background="#05080D"
+                         Foreground="{StaticResource ForegroundBrush}"
+                         BorderBrush="{StaticResource BorderBrush}"
+                         Padding="8,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,12,0">
+                    <Button Content="Load" Width="64" Command="{Binding ApplyCaptureAddressCommand}"/>
+                    <Button Content="Clear" Width="64" Margin="6,0,0,0" Command="{Binding ClearCaptureAddressCommand}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock Foreground="{StaticResource MutedForeground}">
+                        <Run Text="Resolved: "/>
+                        <Run Text="{Binding ResolvedAddress, Mode=OneWay}"/>
+                        <Run Text="  |  Captured packets: "/>
+                        <Run Text="{Binding Capture.TotalPackets, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Foreground="{StaticResource MutedForeground}" FontSize="11" Margin="0,3,0,0">
+                        <Run Text="TX: "/>
+                        <Run Text="{Binding TxInterfaceName, Mode=OneWay}"/>
+                        <Run Text="  |  RX: "/>
+                        <Run Text="{Binding RxInterfaceNames, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Text="{Binding ResultText, Mode=OneWay}"
+                               Foreground="{StaticResource AccentBrush}"
+                               FontWeight="SemiBold"
+                               Margin="0,3,0,0"/>
+                </StackPanel>
+                <TextBlock Grid.Column="3"
+                           Text="{Binding Capture.DisplayFilter, Mode=OneWay}"
+                           VerticalAlignment="Center"
+                           FontFamily="Consolas"
+                           Foreground="{StaticResource AccentBrush}"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Capture Interfaces"
+                               Style="{StaticResource PanelHeader}"
+                               Margin="0,0,0,8"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Capture.Interfaces}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected}"
+                                              Margin="0,3"
+                                              Foreground="{StaticResource ForegroundBrush}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Description}"
+                                                       Foreground="{StaticResource MutedForeground}"
+                                                       FontSize="11"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="8"
+                          HorizontalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}"/>
+
+            <DataGrid Grid.Column="2"
+                      ItemsSource="{Binding Capture.FilteredPackets}"
+                      SelectedItem="{Binding Capture.SelectedPacket, Mode=TwoWay}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      IsReadOnly="True"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      RowHeight="26">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="No" Binding="{Binding No}" Width="52"/>
+                    <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="90"/>
+                    <DataGridTextColumn Header="Interface" Binding="{Binding InterfaceName}" Width="160"/>
+                    <DataGridTextColumn Header="Src MAC" Binding="{Binding SrcMac}" Width="126"/>
+                    <DataGridTextColumn Header="Dst MAC" Binding="{Binding DstMac}" Width="126"/>
+                    <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="78"/>
+                    <DataGridTextColumn Header="Len" Binding="{Binding Length}" Width="56"/>
+                    <DataGridTextColumn Header="Info / Hex" Binding="{Binding SearchText}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+
+        <GridSplitter Grid.Row="3"
+                      Height="6"
+                      VerticalAlignment="Top"
+                      HorizontalAlignment="Stretch"
+                      Background="{StaticResource BorderBrush}"/>
+
+        <TextBox Grid.Row="3"
+                 Margin="0,8,0,0"
+                 Text="{Binding Capture.SelectedPacketDetailText, Mode=OneWay}"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 Background="#05080D"
+                 Foreground="{StaticResource ForegroundBrush}"
+                 BorderBrush="{StaticResource BorderBrush}"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 Padding="8"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"/>
+
+        <Border Grid.Row="4"
+                Background="{StaticResource SurfaceAltBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="10"
+                Margin="0,10,0,0">
+            <TextBlock Text="{Binding Status}"
+                       Foreground="{StaticResource MutedForeground}"
+                       FontSize="12"/>
+        </Border>
+    </Grid>
+</UserControl>

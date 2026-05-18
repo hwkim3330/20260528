@@ -1,0 +1,71 @@
+<UserControl x:Class="EthernetPacketGenerator.Views.BlockBuilderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             AllowDrop="True"
+             Drop="OnBlockDrop"
+             DragOver="OnDragOver"
+             DragLeave="OnDragLeave"
+             MouseMove="Root_MouseMove"
+             MouseLeftButtonUp="Root_MouseLeftButtonUp">
+    <DockPanel Background="{StaticResource SurfaceBrush}">
+        <TextBlock DockPanel.Dock="Top" Text="PACKET STRUCTURE" Style="{StaticResource PanelHeader}"/>
+
+        <ScrollViewer x:Name="BlockScrollViewer"
+                      VerticalScrollBarVisibility="Disabled"
+                      HorizontalScrollBarVisibility="Auto">
+            <Grid>
+                <ItemsControl x:Name="BlockList" ItemsSource="{Binding Blocks}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="6,6"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="3,0" Cursor="Hand"
+                                    PreviewMouseLeftButtonDown="Block_MouseLeftButtonDown">
+                                <Border x:Name="BlockChip"
+                                        Width="70" Height="54"
+                                        CornerRadius="4"
+                                        Background="{Binding Type, Converter={StaticResource ProtoToColor}}"
+                                        BorderThickness="2">
+                                    <Border.BorderBrush>
+                                        <SolidColorBrush Color="Transparent"/>
+                                    </Border.BorderBrush>
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding Type, Converter={StaticResource ProtoToAbbrev}}"
+                                                   FontWeight="Bold" FontSize="13"
+                                                   Foreground="White" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="{Binding ByteLength}"
+                                                   FontSize="9" Foreground="#CCCCFF"
+                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="B" FontSize="8" Foreground="#AAAACC"
+                                                   HorizontalAlignment="Center" Margin="0,-2,0,0"/>
+                                    </StackPanel>
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Remove"     Tag="{Binding}" Click="RemoveBlock_Click"/>
+                                            <MenuItem Header="Move Left"  Tag="{Binding}" Click="MoveLeft_Click"/>
+                                            <MenuItem Header="Move Right" Tag="{Binding}" Click="MoveRight_Click"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                </Border>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Drop position indicator -->
+                <Canvas x:Name="DropIndicatorCanvas" IsHitTestVisible="False" Visibility="Collapsed">
+                    <Rectangle x:Name="DropIndicatorLine"
+                               Width="3" Height="54"
+                               Fill="#FF7C7CFF"
+                               RadiusX="1.5" RadiusY="1.5"
+                               Canvas.Top="6"/>
+                </Canvas>
+            </Grid>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -59,6 +59,29 @@ router.post('/probe-node', async (req, res) => {
   } catch (err) { res.status(502).json({ ok: false, error: err.message }); }
 });
 
+// GET /api/arp-lookup?ip=192.168.1.100
+// Parses the OS ARP table for the given IP address and returns its MAC.
+router.get('/arp-lookup', async (req, res) => {
+  const { ip } = req.query;
+  if (!ip) return res.json({ ok: false, error: 'ip required' });
+  try {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const exec = promisify(execFile);
+    // Works on both Windows (arp -a <ip>) and Linux/macOS
+    const { stdout } = await exec('arp', ['-a', ip]);
+    // Match any colon- or dash-separated MAC in the output
+    const match = stdout.match(/([0-9a-f]{2}[:\-][0-9a-f]{2}[:\-][0-9a-f]{2}[:\-][0-9a-f]{2}[:\-][0-9a-f]{2}[:\-][0-9a-f]{2})/i);
+    if (match) {
+      const mac = match[1].replace(/-/g, ':').toLowerCase();
+      return res.json({ ok: true, mac, ip });
+    }
+    res.json({ ok: false, error: 'not in ARP table', ip });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 // GET /api/worker/status — worker capture state
 router.get('/worker/status', async (req, res) => {
   try {

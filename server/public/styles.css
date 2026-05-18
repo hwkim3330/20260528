@@ -3467,3 +3467,208 @@ body:not(.controlMode) .linkStrip { display: none; }
   background: var(--bg);
 }
 #counterTable tbody tr:hover { background: var(--panel); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Capture Address View
+   ══════════════════════════════════════════════════════════════════════════ */
+
+#captureAddressView.roleView {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto auto 1fr auto;
+  height: 100%;
+  overflow: hidden;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #fafbfc;
+}
+
+#captureAddressView.roleView.active {
+  display: grid;
+}
+
+/* Top bar: NIC checkboxes + control buttons */
+.caTopBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.caIfaceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.caIfaceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.caIfaceChip input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.caIfaceChip.selected {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
+.caControls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Address input row */
+.caAddrRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.caAddrInputEl {
+  flex: 1 1 260px;
+  min-width: 200px;
+  padding: 6px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.caMeta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.caMeta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--accent-strong);
+  background: var(--soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* PASS/FAIL result */
+.caResult {
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.caResult.hidden { display: none; }
+
+.caResult.pass {
+  background: rgba(31, 122, 77, 0.12);
+  color: #1f7a4d;
+  border: 1px solid rgba(31, 122, 77, 0.25);
+}
+
+.caResult.fail {
+  background: rgba(185, 28, 28, 0.10);
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.22);
+}
+
+/* Packet list table */
+.caPacketList {
+  overflow: auto;
+  min-height: 0;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  position: relative;
+}
+
+.caPacketList table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.caPacketList thead th {
+  position: sticky;
+  top: 0;
+  background: #f3f6f8;
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  z-index: 1;
+}
+
+.caPacketList tbody tr {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.caPacketList tbody tr:hover { background: var(--soft); }
+.caPacketList tbody tr.selected { background: rgba(15, 111, 120, 0.10); }
+.caPacketList tbody tr.ca-match { background: rgba(31, 122, 77, 0.07); }
+.caPacketList tbody tr.ca-match.selected { background: rgba(31, 122, 77, 0.18); }
+
+.caPacketList td {
+  padding: 4px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* Detail pane */
+.caDetailPane {
+  height: 180px;
+  flex-shrink: 0;
+  overflow: auto;
+  background: #0b1220;
+  border-radius: 8px;
+  min-height: 0;
+}
+
+.caDetailPre {
+  margin: 0;
+  padding: 10px 12px;
+  color: #d4f1f4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}

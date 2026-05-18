@@ -83,6 +83,7 @@
         <div class="modeTabs">
           <button class="modeTab active" data-view="senderView">Packet Generator</button>
           <button class="modeTab" data-view="labView">Scenario Lab</button>
+          <button class="modeTab" data-view="captureAddressView">Capture Address</button>
           <button class="modeTab" data-view="captureView">Capture</button>
           <button class="modeTab" data-view="hyperTerminalView">HyperTerminal</button>
         </div>
@@ -334,6 +335,60 @@
               </div>
             </section>
           </section>
+        </section>
+
+        <!-- ── Capture Address View ─────────────────────────────────── -->
+        <section id="captureAddressView" class="roleView">
+          <!-- Interface selection + capture controls -->
+          <div class="caTopBar">
+            <div class="caIfaceList" id="caIfaceList">— loading NICs —</div>
+            <div class="caControls">
+              <button id="caRefreshBtn" class="ghostBtn small" title="Reload NIC list">↻ NICs</button>
+              <button id="caStartBtn" class="primaryAction wsStart">▶ Start</button>
+              <button id="caStopBtn" class="ghostBtn wsStop" disabled>■ Stop</button>
+              <button id="caClearBtn" class="ghostBtn">Clear</button>
+            </div>
+          </div>
+
+          <!-- Address input row -->
+          <div class="caAddrRow">
+            <input id="caAddrInput" class="caAddrInputEl" placeholder="self / local / 192.168.1.1 / AA:BB:CC:DD:EE:FF" autocomplete="off">
+            <button id="caLoadBtn" class="primaryAction" style="min-height:34px;padding:0 14px;font-size:.82rem;">Load</button>
+            <button id="caClearAddrBtn" class="ghostBtn" style="min-height:34px;padding:0 10px;font-size:.82rem;">Clear</button>
+            <span class="caMeta">Resolved: <code id="caResolved">—</code></span>
+            <span class="caMeta">TX: <code id="caTxIface">—</code></span>
+            <span class="caMeta">RX: <code id="caRxIface">—</code></span>
+          </div>
+
+          <!-- PASS/FAIL result badge -->
+          <div id="caResult" class="caResult hidden"></div>
+
+          <!-- Packet table -->
+          <div class="caPacketList" id="caPacketList">
+            <table>
+              <thead>
+                <tr>
+                  <th class="colNum">#</th>
+                  <th class="colTime">Time</th>
+                  <th class="colIface">Interface</th>
+                  <th class="colSrcMac">Src MAC</th>
+                  <th class="colDstMac">Dst MAC</th>
+                  <th class="colSrc">Source</th>
+                  <th class="colDst">Destination</th>
+                  <th class="colProto">Protocol</th>
+                  <th class="colLen">Len</th>
+                  <th>Info</th>
+                </tr>
+              </thead>
+              <tbody id="caRows"></tbody>
+            </table>
+            <div id="caPacketEmpty" class="empty wsEmpty">No packets yet — pick an interface, enter an address, and press <strong>Start</strong>.</div>
+          </div>
+
+          <!-- Selected packet detail -->
+          <div class="caDetailPane" id="caDetailPane" hidden>
+            <pre id="caDetailText" class="caDetailPre"></pre>
+          </div>
         </section>
 
         <section id="captureView" class="roleView captureViewWS">

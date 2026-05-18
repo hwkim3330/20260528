@@ -10,6 +10,8 @@ const workerHub      = require('./services/workerHub');
 const serialBridge   = require('./services/serialBridge');
 const switchProtocol = require('./services/switchProtocol');
 const packetBackend  = require('./services/packetBackend');
+const nativeWorker   = require('./services/nativeWorker');
+const autoEngine     = require('./services/autoEngine');
 
 const app  = express();
 const PORT = Number(process.env.PORT || 8080);
@@ -26,20 +28,32 @@ const macrosDir  = path.join(logsDir, 'macros');
 const reportsDir = path.join(__dirname, 'reports');
 [logsDir, testsDir, macrosDir, reportsDir].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
-app.locals.workerHub     = workerHub;
-app.locals.localWorkerId = LOCAL_WORKER;
-app.locals.testsDir      = testsDir;
-app.locals.macrosDir     = macrosDir;
-app.locals.reportsDir    = reportsDir;
-app.locals.serialBridge  = serialBridge;
+app.locals.workerHub      = workerHub;
+app.locals.localWorkerId  = LOCAL_WORKER;
+app.locals.testsDir       = testsDir;
+app.locals.macrosDir      = macrosDir;
+app.locals.reportsDir     = reportsDir;
+app.locals.serialBridge   = serialBridge;
 app.locals.switchProtocol = switchProtocol;
-app.locals.packetBackend = packetBackend;
+app.locals.packetBackend  = packetBackend;
+app.locals.autoEngine     = autoEngine;
 
-// Helper: send command to local worker, returns reply.data
+// Initialize autoEngine with services and storage dir
+autoEngine.init({ packetBackend, serialBridge, switchProtocol }, testsDir);
+
+// Helper: send command to local worker, falls back to nativeWorker when C# is not connected
 async function localCmd(command, payload = {}, timeoutMs = 15000) {
-  const reply = await workerHub.sendCommand(LOCAL_WORKER, command, payload, timeoutMs);
-  if (!reply.ok) throw Object.assign(new Error(reply.error || 'Worker error'), { workerError: true });
-  return reply.data;
+  if (workerHub.hasWorker(LOCAL_WORKER)) {
+    try {
+      const reply = await workerHub.sendCommand(LOCAL_WORKER, command, payload, timeoutMs);
+      if (!reply.ok) throw Object.assign(new Error(reply.error || 'Worker error'), { workerError: true });
+      return reply.data;
+    } catch (e) {
+      if (e.workerError) throw e; // worker said error — don't fall through
+    }
+  }
+  // Native fallback (Linux / headless / C# disconnected)
+  return nativeWorker.dispatch(command, payload, { packetBackend, serialBridge, switchProtocol });
 }
 app.locals.localCmd = localCmd;
 
@@ -199,5 +213,10 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`[PacketLabManager] Worker  : ws://localhost:${PORT}/ws/worker?workerId=${LOCAL_WORKER}`);
   console.log(`[PacketLabManager] Reports : ${reportsDir}`);
   console.log(`[PacketLabManager] Serial  : ${serialBridge.isAvailable() ? 'serialport npm ready' : 'no serialport npm (install: npm install serialport)'}`);
-  console.log(`[PacketLabManager] Packets : ${packetBackend.isAvailable() ? 'cap npm ready' : 'no cap npm (install: npm install cap)'}`);
+  const capStatus = packetBackend.isAvailable()
+    ? 'cap npm ready (send+capture)'
+    : packetBackend.isTcpdumpAvailable()
+      ? 'no cap npm — tcpdump fallback active (capture only)'
+      : 'no cap npm, no tcpdump — packet features unavailable';
+  console.log(`[PacketLabManager] Packets : ${capStatus}`);
 });

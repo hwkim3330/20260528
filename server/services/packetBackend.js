@@ -1,11 +1,16 @@
 'use strict';
 /**
- * packetBackend.js — Native packet send/capture using `cap` npm (libpcap).
- * Used as fallback when C# worker is not connected (Linux / headless).
- * Requires: npm install cap  +  apt install libpcap-dev (Linux) / Npcap (Windows)
+ * packetBackend.js — Native packet send/capture.
+ * Primary:  cap npm (libpcap) — full send + capture
+ * Fallback: tcpdump subprocess — capture only, no compilation/Python needed
+ *
+ * Linux install:
+ *   Full:    sudo apt install libpcap-dev build-essential && npm install cap
+ *   Minimal: sudo apt install tcpdump  (capture only, no Python needed)
  */
 
-const os   = require('os');
+const os             = require('os');
+const { spawn }      = require('child_process');
 const { buildFrame } = require('./frameBuilder');
 
 let Cap;
@@ -58,42 +63,125 @@ function resolveDevice(ifaceName) {
 
 const activeCaptures = new Map(); // iface → { cap, buffer }
 
-function startCapture(ifaceNames, filter, onPacket, onError) {
-  if (!Cap) return false;
+// ── tcpdump fallback capture (no cap, no Python needed) ───────────────────────
 
-  const ifaces = ifaceNames.length ? ifaceNames : [null];
+const activeTcpdump = new Map(); // iface → child_process
+
+function startCaptureTcpdump(ifaceNames, filter, onPacket, onError) {
+  const ifaces = ifaceNames.length ? ifaceNames : ['any'];
   let started  = 0;
 
-  for (const name of ifaces) {
-    const dev = resolveDevice(name);
-    if (!dev) continue;
-    if (activeCaptures.has(dev)) continue;
+  for (const iface of ifaces) {
+    if (activeTcpdump.has(iface)) continue;
 
-    try {
-      const c      = new Cap();
-      const buf    = Buffer.alloc(65535);
-      c.open(dev, filter || '', 10 * 1024 * 1024, buf);
-      c.setMinBytes && c.setMinBytes(0);
+    const args = ['-i', iface, '-w', '-', '-U', '--immediate-mode'];
+    if (filter) args.push(filter);
 
-      c.on('packet', (nbytes) => {
-        try {
-          const frame = Buffer.from(buf.slice(0, nbytes));
-          const no      = ++captureSeq;
-          const ts      = Date.now() / 1000;
-          const decoded = decodeFrame(frame);
-          const record  = { no, timestamp: ts, interface: dev, length: nbytes, frameHex: frame.toString('hex'), decoded };
-          captureRows.push(record);
-          onPacket(dev, frame, record);
-          for (const cb of captureStreamCbs) { try { cb(record); } catch {} }
-        } catch {}
-      });
-      c.on('error', (err) => { try { onError && onError(err); } catch {} });
+    let proc;
+    try { proc = spawn('tcpdump', args, { stdio: ['ignore', 'pipe', 'ignore'] }); }
+    catch { continue; }
 
-      activeCaptures.set(dev, { cap: c, buffer: buf });
-      started++;
-    } catch (e) { /* device not available */ }
+    let pcapBuf    = Buffer.alloc(0);
+    let hdrDone    = false;
+    let littleEnd  = true;
+
+    proc.stdout.on('data', (chunk) => {
+      pcapBuf = Buffer.concat([pcapBuf, chunk]);
+
+      // Parse global pcap header (24 bytes)
+      if (!hdrDone) {
+        if (pcapBuf.length < 24) return;
+        const magic = pcapBuf.readUInt32LE(0);
+        if (magic === 0xa1b2c3d4)      { littleEnd = true;  }
+        else if (magic === 0xd4c3b2a1) { littleEnd = false; }
+        else { proc.kill(); return; }
+        pcapBuf = pcapBuf.slice(24);
+        hdrDone = true;
+      }
+
+      // Parse packet records
+      const r32 = littleEnd ? (o) => pcapBuf.readUInt32LE(o) : (o) => pcapBuf.readUInt32BE(o);
+      while (pcapBuf.length >= 16) {
+        const incl = r32(8);
+        if (pcapBuf.length < 16 + incl) break;
+        const tsSec  = r32(0);
+        const tsUsec = r32(4);
+        const frame  = Buffer.from(pcapBuf.slice(16, 16 + incl));
+        pcapBuf      = pcapBuf.slice(16 + incl);
+
+        const no      = ++captureSeq;
+        const ts      = tsSec + tsUsec / 1e6;
+        const decoded = decodeFrame(frame);
+        const record  = { no, timestamp: ts, interface: iface, length: r32(12), frameHex: frame.toString('hex'), decoded };
+        captureRows.push(record);
+        try { onPacket(iface, frame, record); } catch {}
+        for (const cb of captureStreamCbs) { try { cb(record); } catch {} }
+      }
+    });
+
+    proc.on('error', (err) => { try { onError && onError(err); } catch {} });
+    proc.on('close', () => { activeTcpdump.delete(iface); });
+
+    activeTcpdump.set(iface, proc);
+    started++;
   }
   return started > 0;
+}
+
+function stopCaptureTcpdump() {
+  for (const [, proc] of activeTcpdump) {
+    try { proc.kill('SIGTERM'); } catch {}
+  }
+  activeTcpdump.clear();
+}
+
+function hasTcpdump() {
+  try { const { spawnSync } = require('child_process'); return spawnSync('tcpdump', ['--version'], { stdio: 'ignore' }).status === 0; }
+  catch { return false; }
+}
+
+// ── Unified startCapture ───────────────────────────────────────────────────────
+
+function startCapture(ifaceNames, filter, onPacket, onError) {
+  if (Cap) {
+    // Primary: cap npm
+    const ifaces = ifaceNames.length ? ifaceNames : [null];
+    let started  = 0;
+
+    for (const name of ifaces) {
+      const dev = resolveDevice(name);
+      if (!dev) continue;
+      if (activeCaptures.has(dev)) continue;
+
+      try {
+        const c      = new Cap();
+        const buf    = Buffer.alloc(65535);
+        c.open(dev, filter || '', 10 * 1024 * 1024, buf);
+        c.setMinBytes && c.setMinBytes(0);
+
+        c.on('packet', (nbytes) => {
+          try {
+            const frame = Buffer.from(buf.slice(0, nbytes));
+            const no      = ++captureSeq;
+            const ts      = Date.now() / 1000;
+            const decoded = decodeFrame(frame);
+            const record  = { no, timestamp: ts, interface: dev, length: nbytes, frameHex: frame.toString('hex'), decoded };
+            captureRows.push(record);
+            onPacket(dev, frame, record);
+            for (const cb of captureStreamCbs) { try { cb(record); } catch {} }
+          } catch {}
+        });
+        c.on('error', (err) => { try { onError && onError(err); } catch {} });
+
+        activeCaptures.set(dev, { cap: c, buffer: buf });
+        started++;
+      } catch (e) { /* device not available */ }
+    }
+    return started > 0;
+  }
+
+  // Fallback: tcpdump subprocess (no Python, no native compilation)
+  return startCaptureTcpdump(ifaceNames, filter, onPacket, onError);
 }
 
 function stopCapture() {
@@ -101,6 +189,7 @@ function stopCapture() {
     try { cap.close(); } catch {}
   }
   activeCaptures.clear();
+  stopCaptureTcpdump();
 }
 
 function isCapturing() { return activeCaptures.size > 0; }
@@ -155,7 +244,24 @@ async function sendPackets(profile) {
   }
 }
 
-function isAvailable() { return !!Cap; }
+function isAvailable()       { return !!Cap; }
+function isTcpdumpAvailable() { return hasTcpdump(); }
+
+// Send a raw hex frame (used by nativeWorker sendhex command)
+async function sendRaw(ifaceName, hex, count = 1) {
+  if (!Cap) throw new Error('cap npm not installed — packet send requires: sudo apt install libpcap-dev build-essential && npm install cap');
+  const dev = resolveDevice(ifaceName);
+  if (!dev) throw new Error(`Interface not found: ${ifaceName}`);
+  const frame = Buffer.from((hex || '').replace(/[\s:]/g, ''), 'hex');
+  const c   = new Cap();
+  const buf = Buffer.alloc(65535);
+  c.open(dev, '', 0, buf);
+  let sent = 0;
+  try {
+    for (let i = 0; i < count; i++) { c.send(frame, frame.length); sent++; }
+  } finally { try { c.close(); } catch {} }
+  return { framesSent: sent, bytesSent: sent * frame.length };
+}
 
 // ── Frame decoder ──────────────────────────────────────────────────────────────
 
@@ -263,8 +369,8 @@ function addStreamCallback(cb)    { captureStreamCbs.push(cb); }
 function removeStreamCallback(cb) { captureStreamCbs = captureStreamCbs.filter(x => x !== cb); }
 
 module.exports = {
-  sendPackets, startCapture, stopCapture, isCapturing,
+  sendPackets, sendRaw, startCapture, stopCapture, isCapturing,
   getCaptureDeviceNames, clearCapture, getCaptures, getCaptureStatus,
   addStreamCallback, removeStreamCallback,
-  listInterfaces, resolveDevice, isAvailable, decodeFrame,
+  listInterfaces, resolveDevice, isAvailable, isTcpdumpAvailable, decodeFrame,
 };

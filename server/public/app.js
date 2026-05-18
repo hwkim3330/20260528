@@ -2969,6 +2969,7 @@ async function sbfRun(direction) {
   try {
     const result = await api('/api/simple-bidir-forward-test', { method: 'POST', body: JSON.stringify(body) });
     sbfRenderResult(result.report);
+    renderBidirSimpleChart(result.report);
     const overall = result.report.overall;
     setActionStatus('statusSimpleBidir', overall === 'PASS' ? 'ok' : 'fail',
       result.directions.map((d) => `${d.direction}:${d.result}`).join(' · '));
@@ -4283,6 +4284,72 @@ function showChartPanel(panelId) {
   if (el) el.classList.remove('hidden');
 }
 
+// ── Capture — protocol distribution pie chart ─────────────────────────────
+function renderCaptureProtoChart(rows) {
+  const panel = $('caChartPanel');
+  if (!rows.length) { if (panel) panel.classList.add('hidden'); return; }
+  if (panel) panel.classList.remove('hidden');
+
+  const chart = getChart('caProtoChart');
+  if (!chart) return;
+
+  const counts = { ARP: 0, UDP: 0, TCP: 0, ICMP: 0, Other: 0 };
+  for (const r of rows) {
+    const d = r.decoded || {};
+    if (d.arp)       counts.ARP++;
+    else if (d.udp)  counts.UDP++;
+    else if (d.tcp)  counts.TCP++;
+    else if (d.icmp) counts.ICMP++;
+    else             counts.Other++;
+  }
+  const colors = { ARP: '#f59e0b', UDP: '#0b5cab', TCP: '#16a34a', ICMP: '#7c3aed', Other: '#6b7280' };
+  const data   = Object.entries(counts).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value }));
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { orient: 'vertical', right: 8, top: 'middle', textStyle: { fontSize: 11 } },
+    series: [{
+      type: 'pie', radius: ['38%', '65%'], center: ['38%', '50%'],
+      data, label: { fontSize: 11 },
+      itemStyle: { color: (p) => colors[p.name] || '#6b7280' }
+    }]
+  }, true);
+}
+
+// ── Bidir simple test — sent vs matched bar chart ─────────────────────────
+function renderBidirSimpleChart(report) {
+  const wrap = $('sbfSimpleChartWrap');
+  if (!report || !report.directions) { if (wrap) wrap.classList.add('hidden'); return; }
+  if (wrap) wrap.classList.remove('hidden');
+
+  const chart = getChart('sbfSimpleChart');
+  if (!chart) return;
+
+  const dirs    = report.directions;
+  const labels  = dirs.map((d) => d.direction);
+  const sent    = dirs.map((d) => d.sent    || d.count || 0);
+  const matched = dirs.map((d) => d.matched || 0);
+  const colors  = dirs.map((d) => d.result === 'PASS' ? '#16a34a' : '#ef4444');
+
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['Sent', 'Matched'], top: 4, textStyle: { fontSize: 12 } },
+    grid: { left: 44, right: 16, bottom: 36, top: 44 },
+    xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 12 } },
+    yAxis: { type: 'value', name: 'Packets', nameTextStyle: { fontSize: 11 } },
+    series: [
+      { name: 'Sent',    type: 'bar', data: sent,    barGap: '5%',
+        itemStyle: { color: '#94a3b8' } },
+      { name: 'Matched', type: 'bar', data: matched,
+        itemStyle: { color: (p) => colors[p.dataIndex] },
+        label: { show: true, position: 'top', fontSize: 12,
+                 formatter: (p) => dirs[p.dataIndex].result } }
+    ]
+  }, true);
+}
+
 function renderBenchChart(results) {
   showChartPanel('benchChartPanel');
   const chart = getChart('benchChart');
@@ -5081,6 +5148,7 @@ async function caPoll() {
       }
       caState.lastOffset += newRows.length;
       caUpdateCount();
+      renderCaptureProtoChart(caState.packets);
     }
   } catch {
     // silently swallow polling errors

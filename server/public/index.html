@@ -371,6 +371,11 @@
             <span id="caResult" class="caResult"></span>
           </div>
 
+          <!-- Row 2.5: Protocol distribution chart -->
+          <div id="caChartPanel" class="caChartPanel hidden">
+            <div id="caProtoChart" style="height:160px;width:100%"></div>
+          </div>
+
           <!-- Row 3: Packet table header -->
           <div class="caPacketWrap">
             <div class="caTableHeader">
@@ -921,6 +926,10 @@
                 <button id="sbfRunBoth" class="primaryAction">▶ Run Both</button>
                 <a id="sbfOpenReport" class="linkButton disabled" href="/reports/simple-bidir-forward-latest.html" target="_blank" rel="noreferrer">Open Report</a>
                 <a id="sbfOpenJson" class="linkButton disabled" href="/reports/simple-bidir-forward-latest.json" target="_blank" rel="noreferrer">Open JSON</a>
+              </div>
+              <div id="sbfSimpleChartWrap" class="expChartPanel hidden" style="margin-top:12px">
+                <div class="expChartHead"><strong>Test Result — Sent vs Matched</strong></div>
+                <div id="sbfSimpleChart" class="expChartBody"></div>
               </div>
               <div id="sbfResult" class="sbfResult hidden"></div>
             </div>

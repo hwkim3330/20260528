@@ -2650,6 +2650,15 @@ pre {
 }
 .expChartPanel.hidden { display: none; }
 
+.caChartPanel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.caChartPanel.hidden { display: none; }
+
 /* --- Simple Bidirectional Forwarding Test card --- */
 .sbfStep { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .sbfStep:first-of-type { border-top: none; padding-top: 0; margin-top: 12px; }

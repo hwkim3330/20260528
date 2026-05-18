@@ -28,10 +28,14 @@ router.get('/interfaces', async (req, res) => {
 router.post('/build', async (req, res) => {
   try {
     if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('build', req.body || {});
-      return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      try {
+        const data = await req.app.locals.localCmd('build', req.body || {});
+        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      } catch (e) {
+        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
+      }
     }
-    // Linux: build frame and return hex
+    // Linux or unsupported protocol: build frame locally and return hex
     const { buildFrame, normalizeProfile } = require('../services/frameBuilder');
     const frame = buildFrame(normalizeProfile(req.body || {}));
     const data  = { frameHex: frame.toString('hex'), frameLength: frame.length };
@@ -43,8 +47,13 @@ router.post('/build', async (req, res) => {
 router.post('/send', async (req, res) => {
   try {
     if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
-      return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      try {
+        const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
+        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      } catch (e) {
+        // C# doesn't support this protocol — fall through to native frameBuilder
+        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
+      }
     }
     const result = await req.app.locals.packetBackend.sendPackets(req.body || {});
     res.json({ ok: true, ...result, stdout: result });
@@ -55,8 +64,12 @@ router.post('/send', async (req, res) => {
 router.post('/packet/send', async (req, res) => {
   try {
     if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
-      return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      try {
+        const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
+        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
+      } catch (e) {
+        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
+      }
     }
     const result = await req.app.locals.packetBackend.sendPackets(req.body || {});
     res.json({ ok: true, ...result, stdout: result });

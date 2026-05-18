@@ -100,19 +100,20 @@ function startCaptureTcpdump(ifaceNames, filter, onPacket, onError) {
       }
 
       // Parse packet records
-      const r32 = littleEnd ? (o) => pcapBuf.readUInt32LE(o) : (o) => pcapBuf.readUInt32BE(o);
+      const r32 = (o) => littleEnd ? pcapBuf.readUInt32LE(o) : pcapBuf.readUInt32BE(o);
       while (pcapBuf.length >= 16) {
-        const incl = r32(8);
-        if (pcapBuf.length < 16 + incl) break;
         const tsSec  = r32(0);
         const tsUsec = r32(4);
-        const frame  = Buffer.from(pcapBuf.slice(16, 16 + incl));
-        pcapBuf      = pcapBuf.slice(16 + incl);
+        const incl   = r32(8);
+        const origLen = r32(12); // read before slicing
+        if (pcapBuf.length < 16 + incl) break;
+        const frame = Buffer.from(pcapBuf.slice(16, 16 + incl));
+        pcapBuf     = pcapBuf.slice(16 + incl);
 
         const no      = ++captureSeq;
         const ts      = tsSec + tsUsec / 1e6;
         const decoded = decodeFrame(frame);
-        const record  = { no, timestamp: ts, interface: iface, length: r32(12), frameHex: frame.toString('hex'), decoded };
+        const record  = { no, timestamp: ts, interface: iface, length: origLen, frameHex: frame.toString('hex'), decoded };
         captureRows.push(record);
         try { onPacket(iface, frame, record); } catch {}
         for (const cb of captureStreamCbs) { try { cb(record); } catch {} }
@@ -192,10 +193,10 @@ function stopCapture() {
   stopCaptureTcpdump();
 }
 
-function isCapturing() { return activeCaptures.size > 0; }
+function isCapturing() { return activeCaptures.size > 0 || activeTcpdump.size > 0; }
 
 function getCaptureDeviceNames() {
-  return Array.from(activeCaptures.keys());
+  return [...Array.from(activeCaptures.keys()), ...Array.from(activeTcpdump.keys())];
 }
 
 // ── Send ───────────────────────────────────────────────────────────────────────

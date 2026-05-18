@@ -18,8 +18,8 @@ function seqLoad(req)  {
 }
 function seqSave(req, items) { fs.writeFileSync(seqFile(req), JSON.stringify(items, null, 2)); }
 
-// ── Automation — C# AutomationViewModel or autoEngine ────────────────────────
-router.post('/auto/run', async (req, res) => {
+// ── Legacy /api/scenarios/* aliases (auto routes are in auto.js) ─────────────
+router.post('/scenarios/run', async (req, res) => {
   try {
     if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autorun', req.body, 60000) || {}) });
     const test = req.body?.test;
@@ -28,40 +28,7 @@ router.post('/auto/run', async (req, res) => {
     res.json({ ok: true, test, status: 'started' });
   } catch (e) { wErr(res, e); }
 });
-
-router.get('/auto/status', async (req, res) => {
-  try {
-    if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autostatus', {}, 5000) || {}) });
-    res.json({ ok: true, ...req.app.locals.autoEngine.getStatus() });
-  } catch (e) { wErr(res, e); }
-});
-
-router.get('/auto/results', async (req, res) => {
-  try {
-    if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autoresults', {}, 5000) || {}) });
-    res.json({ ok: true, rows: req.app.locals.autoEngine.getResults() });
-  } catch (e) { wErr(res, e); }
-});
-
-router.post('/auto/stop', async (req, res) => {
-  try {
-    if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autostop', {}, 5000) || {}) });
-    req.app.locals.autoEngine.stopTest();
-    res.json({ ok: true });
-  } catch (e) { wErr(res, e); }
-});
-
-// Legacy /api/scenarios/* aliases
-router.post('/scenarios/run',    async (req, res) => {
-  try {
-    if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autorun', req.body, 60000) || {}) });
-    const test = req.body?.test;
-    if (!test) return res.status(400).json({ ok: false, error: 'test required' });
-    req.app.locals.autoEngine.runTest(test).catch(() => {});
-    res.json({ ok: true, test, status: 'started' });
-  } catch (e) { wErr(res, e); }
-});
-router.get('/scenarios/status',  async (req, res) => {
+router.get('/scenarios/status', async (req, res) => {
   try {
     if (hasWorker(req)) return res.json({ ok: true, ...(await localCmd(req, 'autostatus', {}, 5000) || {}) });
     res.json({ ok: true, ...req.app.locals.autoEngine.getStatus() });

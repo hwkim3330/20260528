@@ -1,5 +1,9 @@
 const $ = (id) => document.getElementById(id);
-const DEFAULT_PEER_URL = 'http://169.254.5.7:8080';
+const DEFAULT_PEER_URL = 'http://172.31.51.213:8080';
+const savedPeerUrl = localStorage.getItem('peerUrl');
+const initialPeerUrl = !savedPeerUrl || savedPeerUrl === 'http://169.254.5.7:8080'
+  ? DEFAULT_PEER_URL
+  : savedPeerUrl;
 
 const state = {
   examples: {},
@@ -12,7 +16,7 @@ const state = {
     receiver: null
   },
   peer: {
-    url: localStorage.getItem('peerUrl') || DEFAULT_PEER_URL,
+    url: initialPeerUrl,
     interface: localStorage.getItem('peerInterface') || '',
     interfaces: [],
     iface: null
@@ -4970,7 +4974,7 @@ document.getElementById('counterReadBtn')?.addEventListener('click', async () =>
 // =============================================================================
 
 const caState = {
-  peerUrl: 'http://localhost:8080',
+  peerUrl: DEFAULT_PEER_URL,
   packets: [],          // all captured packets accumulated
   ifaces: [],           // interface objects from peer probe
   selectedIfaces: [],   // interface keys currently checked

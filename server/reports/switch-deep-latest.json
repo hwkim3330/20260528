@@ -1,388 +1,236 @@
 {
-  "generatedAt": "2026-05-19T02:06:22.053Z",
+  "generatedAt": "2026-05-19T02:15:12.838Z",
   "local": "http://localhost:8080",
   "peer": "http://172.31.51.213:8080",
-  "count": 10,
-  "trials": 5,
+  "count": 5,
+  "trials": 3,
   "measurementRetries": 3,
   "results": [
     {
       "direction": "Local enp1s0f1 -> Peer 이더넷 2",
       "trial": 1,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4016,
+      "elapsedMs": 3561,
       "byIface": {
-        "이더넷 2": 10
+        "이더넷 2": 5
       },
       "error": ""
     },
     {
       "direction": "Local enp1s0f3 -> Peer 이더넷",
       "trial": 1,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
-      "measurementAttempt": 3,
-      "elapsedMs": 4399,
+      "measurementAttempt": 1,
+      "elapsedMs": 3182,
       "byIface": {
-        "이더넷": 10
+        "이더넷": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 2 -> Local enp1s0f1",
       "trial": 1,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4218,
+      "elapsedMs": 3584,
       "byIface": {
-        "enp1s0f1": 10
+        "enp1s0f1": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 -> Local enp1s0f3",
       "trial": 1,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4347,
+      "elapsedMs": 3383,
       "byIface": {
-        "enp1s0f3": 10
+        "enp1s0f3": 5
       },
       "error": ""
     },
     {
       "direction": "Local enp1s0f1 -> Peer 이더넷 2",
       "trial": 2,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 3962,
+      "elapsedMs": 3494,
       "byIface": {
-        "이더넷 2": 10
+        "이더넷 2": 5
       },
       "error": ""
     },
     {
       "direction": "Local enp1s0f3 -> Peer 이더넷",
       "trial": 2,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
-      "measurementAttempt": 3,
-      "elapsedMs": 4393,
+      "measurementAttempt": 1,
+      "elapsedMs": 3285,
       "byIface": {
-        "이더넷": 10
+        "이더넷": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 2 -> Local enp1s0f1",
       "trial": 2,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4233,
+      "elapsedMs": 3874,
       "byIface": {
-        "enp1s0f1": 10
+        "enp1s0f1": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 -> Local enp1s0f3",
       "trial": 2,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4241,
+      "elapsedMs": 3441,
       "byIface": {
-        "enp1s0f3": 10
+        "enp1s0f3": 5
       },
       "error": ""
     },
     {
       "direction": "Local enp1s0f1 -> Peer 이더넷 2",
       "trial": 3,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4159,
+      "elapsedMs": 3412,
       "byIface": {
-        "이더넷 2": 10
+        "이더넷 2": 5
       },
       "error": ""
     },
     {
       "direction": "Local enp1s0f3 -> Peer 이더넷",
       "trial": 3,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
-      "measurementAttempt": 3,
-      "elapsedMs": 4331,
+      "measurementAttempt": 1,
+      "elapsedMs": 3223,
       "byIface": {
-        "이더넷": 10
+        "이더넷": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 2 -> Local enp1s0f1",
       "trial": 3,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4675,
+      "elapsedMs": 3394,
       "byIface": {
-        "enp1s0f1": 10
+        "enp1s0f1": 5
       },
       "error": ""
     },
     {
       "direction": "Peer 이더넷 -> Local enp1s0f3",
       "trial": 3,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
+      "sent": 5,
+      "expected": 5,
+      "matched": 5,
+      "captureRows": 5,
       "lossPct": 0,
       "startOk": true,
       "captureStartAttempts": 1,
       "sendOk": true,
       "captureOk": true,
       "measurementAttempt": 1,
-      "elapsedMs": 4164,
+      "elapsedMs": 3395,
       "byIface": {
-        "enp1s0f3": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Local enp1s0f1 -> Peer 이더넷 2",
-      "trial": 4,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 3973,
-      "byIface": {
-        "이더넷 2": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Local enp1s0f3 -> Peer 이더넷",
-      "trial": 4,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 3920,
-      "byIface": {
-        "이더넷": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Peer 이더넷 2 -> Local enp1s0f1",
-      "trial": 4,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 4147,
-      "byIface": {
-        "enp1s0f1": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Peer 이더넷 -> Local enp1s0f3",
-      "trial": 4,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 4177,
-      "byIface": {
-        "enp1s0f3": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Local enp1s0f1 -> Peer 이더넷 2",
-      "trial": 5,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 2,
-      "elapsedMs": 4034,
-      "byIface": {
-        "이더넷 2": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Local enp1s0f3 -> Peer 이더넷",
-      "trial": 5,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 4263,
-      "byIface": {
-        "이더넷": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Peer 이더넷 2 -> Local enp1s0f1",
-      "trial": 5,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 4487,
-      "byIface": {
-        "enp1s0f1": 10
-      },
-      "error": ""
-    },
-    {
-      "direction": "Peer 이더넷 -> Local enp1s0f3",
-      "trial": 5,
-      "sent": 10,
-      "expected": 10,
-      "matched": 10,
-      "captureRows": 10,
-      "lossPct": 0,
-      "startOk": true,
-      "captureStartAttempts": 1,
-      "sendOk": true,
-      "captureOk": true,
-      "measurementAttempt": 1,
-      "elapsedMs": 4615,
-      "byIface": {
-        "enp1s0f3": 10
+        "enp1s0f3": 5
       },
       "error": ""
     }
@@ -390,12 +238,12 @@
   "summary": [
     {
       "direction": "Local enp1s0f1 -> Peer 이더넷 2",
-      "sent": 50,
-      "matched": 50,
+      "sent": 15,
+      "matched": 15,
       "rxPct": 100,
       "lossPct": 0,
       "apiErrors": 0,
-      "perfectTrials": 5,
+      "perfectTrials": 3,
       "partialTrials": 0,
       "zeroTrials": 0,
       "verdict": "PASS",
@@ -403,95 +251,57 @@
         {
           "direction": "Local enp1s0f1 -> Peer 이더넷 2",
           "trial": 1,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4016,
+          "elapsedMs": 3561,
           "byIface": {
-            "이더넷 2": 10
+            "이더넷 2": 5
           },
           "error": ""
         },
         {
           "direction": "Local enp1s0f1 -> Peer 이더넷 2",
           "trial": 2,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 3962,
+          "elapsedMs": 3494,
           "byIface": {
-            "이더넷 2": 10
+            "이더넷 2": 5
           },
           "error": ""
         },
         {
           "direction": "Local enp1s0f1 -> Peer 이더넷 2",
           "trial": 3,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4159,
+          "elapsedMs": 3412,
           "byIface": {
-            "이더넷 2": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Local enp1s0f1 -> Peer 이더넷 2",
-          "trial": 4,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 3973,
-          "byIface": {
-            "이더넷 2": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Local enp1s0f1 -> Peer 이더넷 2",
-          "trial": 5,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 2,
-          "elapsedMs": 4034,
-          "byIface": {
-            "이더넷 2": 10
+            "이더넷 2": 5
           },
           "error": ""
         }
@@ -499,12 +309,12 @@
     },
     {
       "direction": "Local enp1s0f3 -> Peer 이더넷",
-      "sent": 50,
-      "matched": 50,
+      "sent": 15,
+      "matched": 15,
       "rxPct": 100,
       "lossPct": 0,
       "apiErrors": 0,
-      "perfectTrials": 5,
+      "perfectTrials": 3,
       "partialTrials": 0,
       "zeroTrials": 0,
       "verdict": "PASS",
@@ -512,95 +322,57 @@
         {
           "direction": "Local enp1s0f3 -> Peer 이더넷",
           "trial": 1,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
-          "measurementAttempt": 3,
-          "elapsedMs": 4399,
+          "measurementAttempt": 1,
+          "elapsedMs": 3182,
           "byIface": {
-            "이더넷": 10
+            "이더넷": 5
           },
           "error": ""
         },
         {
           "direction": "Local enp1s0f3 -> Peer 이더넷",
           "trial": 2,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
-          "measurementAttempt": 3,
-          "elapsedMs": 4393,
+          "measurementAttempt": 1,
+          "elapsedMs": 3285,
           "byIface": {
-            "이더넷": 10
+            "이더넷": 5
           },
           "error": ""
         },
         {
           "direction": "Local enp1s0f3 -> Peer 이더넷",
           "trial": 3,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 3,
-          "elapsedMs": 4331,
-          "byIface": {
-            "이더넷": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Local enp1s0f3 -> Peer 이더넷",
-          "trial": 4,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 3920,
+          "elapsedMs": 3223,
           "byIface": {
-            "이더넷": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Local enp1s0f3 -> Peer 이더넷",
-          "trial": 5,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 4263,
-          "byIface": {
-            "이더넷": 10
+            "이더넷": 5
           },
           "error": ""
         }
@@ -608,12 +380,12 @@
     },
     {
       "direction": "Peer 이더넷 2 -> Local enp1s0f1",
-      "sent": 50,
-      "matched": 50,
+      "sent": 15,
+      "matched": 15,
       "rxPct": 100,
       "lossPct": 0,
       "apiErrors": 0,
-      "perfectTrials": 5,
+      "perfectTrials": 3,
       "partialTrials": 0,
       "zeroTrials": 0,
       "verdict": "PASS",
@@ -621,95 +393,57 @@
         {
           "direction": "Peer 이더넷 2 -> Local enp1s0f1",
           "trial": 1,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4218,
+          "elapsedMs": 3584,
           "byIface": {
-            "enp1s0f1": 10
+            "enp1s0f1": 5
           },
           "error": ""
         },
         {
           "direction": "Peer 이더넷 2 -> Local enp1s0f1",
           "trial": 2,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4233,
+          "elapsedMs": 3874,
           "byIface": {
-            "enp1s0f1": 10
+            "enp1s0f1": 5
           },
           "error": ""
         },
         {
           "direction": "Peer 이더넷 2 -> Local enp1s0f1",
           "trial": 3,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4675,
+          "elapsedMs": 3394,
           "byIface": {
-            "enp1s0f1": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Peer 이더넷 2 -> Local enp1s0f1",
-          "trial": 4,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 4147,
-          "byIface": {
-            "enp1s0f1": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Peer 이더넷 2 -> Local enp1s0f1",
-          "trial": 5,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 4487,
-          "byIface": {
-            "enp1s0f1": 10
+            "enp1s0f1": 5
           },
           "error": ""
         }
@@ -717,12 +451,12 @@
     },
     {
       "direction": "Peer 이더넷 -> Local enp1s0f3",
-      "sent": 50,
-      "matched": 50,
+      "sent": 15,
+      "matched": 15,
       "rxPct": 100,
       "lossPct": 0,
       "apiErrors": 0,
-      "perfectTrials": 5,
+      "perfectTrials": 3,
       "partialTrials": 0,
       "zeroTrials": 0,
       "verdict": "PASS",
@@ -730,95 +464,57 @@
         {
           "direction": "Peer 이더넷 -> Local enp1s0f3",
           "trial": 1,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4347,
+          "elapsedMs": 3383,
           "byIface": {
-            "enp1s0f3": 10
+            "enp1s0f3": 5
           },
           "error": ""
         },
         {
           "direction": "Peer 이더넷 -> Local enp1s0f3",
           "trial": 2,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4241,
+          "elapsedMs": 3441,
           "byIface": {
-            "enp1s0f3": 10
+            "enp1s0f3": 5
           },
           "error": ""
         },
         {
           "direction": "Peer 이더넷 -> Local enp1s0f3",
           "trial": 3,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
+          "sent": 5,
+          "expected": 5,
+          "matched": 5,
+          "captureRows": 5,
           "lossPct": 0,
           "startOk": true,
           "captureStartAttempts": 1,
           "sendOk": true,
           "captureOk": true,
           "measurementAttempt": 1,
-          "elapsedMs": 4164,
+          "elapsedMs": 3395,
           "byIface": {
-            "enp1s0f3": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Peer 이더넷 -> Local enp1s0f3",
-          "trial": 4,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 4177,
-          "byIface": {
-            "enp1s0f3": 10
-          },
-          "error": ""
-        },
-        {
-          "direction": "Peer 이더넷 -> Local enp1s0f3",
-          "trial": 5,
-          "sent": 10,
-          "expected": 10,
-          "matched": 10,
-          "captureRows": 10,
-          "lossPct": 0,
-          "startOk": true,
-          "captureStartAttempts": 1,
-          "sendOk": true,
-          "captureOk": true,
-          "measurementAttempt": 1,
-          "elapsedMs": 4615,
-          "byIface": {
-            "enp1s0f3": 10
+            "enp1s0f3": 5
           },
           "error": ""
         }

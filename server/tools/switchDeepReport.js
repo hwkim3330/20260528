@@ -140,6 +140,12 @@ function summarize(results) {
   });
 }
 
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
 function writeReport(report) {
   const reportsDir = path.join(process.cwd(), 'reports');
   fs.mkdirSync(reportsDir, { recursive: true });
@@ -159,10 +165,124 @@ function writeReport(report) {
   const totalMatched = report.summary.reduce((sum, s) => sum + s.matched, 0);
   const stableDirections = report.summary.filter((s) => s.verdict === 'PASS').length;
   const undercountDirections = report.summary.filter((s) => s.verdict === 'CAPTURE UNDERCOUNT').length;
+  const topologyPairs = [
+    {
+      port: 'P0-P1',
+      local: directions[0],
+      peer: directions[0],
+      forward: report.summary.find((s) => s.direction === directions[0].name),
+      reverse: report.summary.find((s) => s.direction === directions[2].name)
+    },
+    {
+      port: 'P2-P3',
+      local: directions[1],
+      peer: directions[1],
+      forward: report.summary.find((s) => s.direction === directions[1].name),
+      reverse: report.summary.find((s) => s.direction === directions[3].name)
+    }
+  ];
+  const topology = topologyPairs.map((p) => {
+    const ok = p.forward?.verdict === 'PASS' && p.reverse?.verdict === 'PASS';
+    return `<div class="topoLinkCard ${ok ? 'ok' : 'warn'}">
+      <div class="topoNode">
+        <span>THIS PC</span><strong>${esc(p.local.srcIf)}</strong><code>${esc(p.local.srcIp)}</code><small>${esc(p.local.srcMac)}</small>
+      </div>
+      <div class="switchPath">
+        <div class="wire"></div>
+        <div class="dutPort">${esc(p.port)}</div>
+        <div class="dutBox">DUT SWITCH</div>
+        <div class="linkStats">
+          <span>→ ${p.forward?.matched ?? 0}/${p.forward?.sent ?? 0}</span>
+          <span>← ${p.reverse?.matched ?? 0}/${p.reverse?.sent ?? 0}</span>
+        </div>
+      </div>
+      <div class="topoNode peer">
+        <span>PEER PC</span><strong>${esc(p.peer.dstIf)}</strong><code>${esc(p.peer.dstIp)}</code><small>${esc(p.peer.dstMac)}</small>
+      </div>
+    </div>`;
+  }).join('');
+  const heatmap = report.summary.map((s) => {
+    const cells = s.trials.map((t) => {
+      const ok = t.matched >= t.expected && !t.error;
+      const partial = t.matched > 0 && t.matched < t.expected;
+      const cls = ok ? 'ok' : partial ? 'partial' : 'fail';
+      return `<span class="heatCell ${cls}" title="trial ${t.trial}: ${t.matched}/${t.expected}">${t.matched}/${t.expected}</span>`;
+    }).join('');
+    return `<div class="heatRow"><strong>${esc(s.direction)}</strong><div>${cells}</div></div>`;
+  }).join('');
   const rows = report.summary.map((s) =>
-    `<tr><td>${s.direction}</td><td><span class="pill" style="background:${verdictColor(s.verdict)}">${s.verdict}</span></td><td>${s.matched}/${s.sent}</td><td>${s.rxPct}%</td><td>${s.apiErrors}</td><td>${s.trials.map((t) => `${t.matched}/${t.expected}${t.error ? ` (${t.error})` : ''}`).join(' · ')}</td></tr>`
+    `<tr><td>${esc(s.direction)}</td><td><span class="pill" style="background:${verdictColor(s.verdict)}">${esc(s.verdict)}</span></td><td>${s.matched}/${s.sent}</td><td>${s.rxPct}%</td><td>${s.apiErrors}</td><td>${s.trials.map((t) => `${t.matched}/${t.expected}${t.error ? ` (${esc(t.error)})` : ''}`).join(' · ')}</td></tr>`
   ).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Switch Deep Test Report</title><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script><style>body{margin:24px;font:14px/1.45 ui-sans-serif,system-ui;color:#17202a;background:linear-gradient(180deg,#eef5f6,#f8fafc 280px)}.wrap{max-width:1220px;margin:auto}.hero{background:radial-gradient(circle at 85% 15%,rgba(34,197,94,.24),transparent 170px),linear-gradient(135deg,#10262c,#0f6f78);color:white;border-radius:24px;padding:24px 26px;box-shadow:0 18px 45px #0f172a26}.hero h1{margin:0 0 6px;font-size:30px;letter-spacing:-.03em}.hero p{max-width:900px;color:#d9fbff}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}.card,.chart,table,.note{background:white;border:1px solid #d9e2ea;border-radius:18px;box-shadow:0 4px 16px #0f172a10}.card{padding:14px}.card span{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:800}.card strong{display:block;font-size:26px}.charts{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.chart{padding:16px}.chart h3{margin:0 0 10px}.note{padding:14px 16px;margin:16px 0;color:#334155}.note strong{color:#0f6f78}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;overflow:hidden}th,td{padding:10px 12px;border-bottom:1px solid #e5edf3;text-align:left;vertical-align:top}th{background:#edf6f7;font-size:12px;text-transform:uppercase;color:#456}td:nth-child(n+3){font-family:ui-monospace,SFMono-Regular,monospace}.pill{display:inline-block;color:white;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;white-space:nowrap}.muted{color:#64748b}@media(max-width:900px){.cards,.charts{grid-template-columns:1fr}}</style></head><body><div class="wrap"><div class="hero"><h1>Switch Deep Test Report</h1><div>${report.generatedAt}</div><p>Known-unicast validation. Local ${report.local} · Peer ${report.peer} · ${report.trials} trials · ${report.count} frames/trial · up to ${measurementRetries} measurement attempts/trial. Destination MAC and capture BPF are pinned per port pair.</p></div><div class="cards"><div class="card"><span>Total Frames</span><strong>${totalSent}</strong></div><div class="card"><span>Matched</span><strong>${totalMatched}</strong></div><div class="card"><span>Overall Marker RX</span><strong>${(100 * totalMatched / totalSent).toFixed(1)}%</strong></div><div class="card"><span>Clean Directions</span><strong>${stableDirections}/${report.summary.length}</strong></div><div class="card"><span>Capture Undercount</span><strong>${undercountDirections}</strong></div></div><div class="note"><strong>Method:</strong> Each direction sends known-unicast UDP frames to the exact destination MAC, then captures only frames matching source and destination MAC on the expected receiving NIC. A retry is used only for measurement setup errors, not to inflate packet counts.</div><div class="charts"><div class="chart"><h3>Marker Receive Rate by Direction</h3><canvas id="rx"></canvas></div><div class="chart"><h3>API / Measurement Errors</h3><canvas id="api"></canvas></div></div><div class="chart" style="margin-top:16px"><h3>Loss / Undercount Rate</h3><canvas id="loss"></canvas></div><table><thead><tr><th>Direction</th><th>Verdict</th><th>Matched</th><th>RX</th><th>API Errors</th><th>Trials</th></tr></thead><tbody>${rows}</tbody></table><p class="muted">Generated artifact: <code>/reports/switch-deep-latest.html</code> and <code>/reports/switch-deep-latest.json</code>.</p></div><script>const labels=${JSON.stringify(labels)};new Chart(document.getElementById('rx'),{type:'bar',data:{labels,datasets:[{label:'RX %',data:${JSON.stringify(rx)},backgroundColor:'#0f6f78'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100}}}});new Chart(document.getElementById('api'),{type:'bar',data:{labels,datasets:[{label:'API errors',data:${JSON.stringify(apiErrors)},backgroundColor:'#dc2626'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});new Chart(document.getElementById('loss'),{type:'bar',data:{labels,datasets:[{label:'Loss / undercount %',data:${JSON.stringify(loss)},backgroundColor:'#b9651a'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100}}}});</script></body></html>`;
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Switch Deep Test Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    body{margin:24px;font:14px/1.45 ui-sans-serif,system-ui;color:#17202a;background:linear-gradient(180deg,#eef5f6,#f8fafc 280px)}
+    .wrap{max-width:1220px;margin:auto}
+    .hero{background:radial-gradient(circle at 85% 15%,rgba(34,197,94,.24),transparent 170px),linear-gradient(135deg,#10262c,#0f6f78);color:white;border-radius:24px;padding:24px 26px;box-shadow:0 18px 45px #0f172a26}
+    .hero h1{margin:0 0 6px;font-size:30px;letter-spacing:-.03em}.hero p{max-width:900px;color:#d9fbff}
+    .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+    .card,.chart,table,.note,.topology,.heatmap{background:white;border:1px solid #d9e2ea;border-radius:18px;box-shadow:0 4px 16px #0f172a10}
+    .card{padding:14px}.card span{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:800}.card strong{display:block;font-size:26px}
+    .charts{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.chart{padding:16px}.chart h3,.topology h3,.heatmap h3{margin:0 0 10px}
+    .note{padding:14px 16px;margin:16px 0;color:#334155}.note strong{color:#0f6f78}
+    .topology{padding:16px;margin:16px 0}.topoGrid{display:grid;gap:12px}
+    .topoLinkCard{display:grid;grid-template-columns:minmax(180px,1fr) minmax(280px,1.15fr) minmax(180px,1fr);gap:12px;align-items:center;border:1px solid #dbe7ef;border-radius:16px;padding:12px;background:linear-gradient(90deg,#f8fbfc,#fff)}
+    .topoLinkCard.ok{border-color:#b7e4c7}.topoLinkCard.warn{border-color:#f5c28b}
+    .topoNode{border-radius:14px;background:#f2f8f9;border:1px solid #d7e8ec;padding:12px}.topoNode.peer{background:#fff7ed;border-color:#fed7aa}
+    .topoNode span{display:block;font-size:10px;font-weight:900;color:#64748b;letter-spacing:.08em}.topoNode strong{display:block;font-size:18px}.topoNode code,.topoNode small{display:block;color:#475569;margin-top:2px}
+    .switchPath{position:relative;display:grid;grid-template-columns:1fr 110px 1fr;align-items:center;gap:8px;min-height:94px}
+    .wire{grid-column:1/4;height:8px;border-radius:999px;background:linear-gradient(90deg,#0f6f78,#22c55e,#f59e0b);box-shadow:0 0 0 4px #eef8f1}
+    .dutBox{grid-column:2;grid-row:1;border-radius:14px;background:#10262c;color:white;text-align:center;padding:16px 10px;font-weight:900;box-shadow:0 12px 24px #0f172a22}
+    .dutPort{position:absolute;top:0;left:50%;transform:translateX(-50%);background:#e6f5ed;color:#14532d;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:900}
+    .linkStats{position:absolute;bottom:0;left:50%;transform:translateX(-50%);display:flex;gap:8px}.linkStats span{background:white;border:1px solid #dbe7ef;border-radius:999px;padding:4px 8px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}
+    .heatmap{padding:16px;margin:16px 0}.heatRow{display:grid;grid-template-columns:minmax(260px,.95fr) 1.5fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #edf2f7}.heatRow:first-of-type{border-top:0}
+    .heatRow strong{font-size:12px}.heatCell{display:inline-block;margin:3px;border-radius:8px;padding:5px 8px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;font-weight:800}
+    .heatCell.ok{background:#dcfce7;color:#14532d}.heatCell.partial{background:#fef3c7;color:#92400e}.heatCell.fail{background:#fee2e2;color:#991b1b}
+    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;overflow:hidden}th,td{padding:10px 12px;border-bottom:1px solid #e5edf3;text-align:left;vertical-align:top}th{background:#edf6f7;font-size:12px;text-transform:uppercase;color:#456}td:nth-child(n+3){font-family:ui-monospace,SFMono-Regular,monospace}
+    .pill{display:inline-block;color:white;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;white-space:nowrap}.muted{color:#64748b}
+    @media(max-width:900px){.cards,.charts,.topoLinkCard,.heatRow{grid-template-columns:1fr}.switchPath{min-height:120px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Switch Deep Test Report</h1>
+      <div>${esc(report.generatedAt)}</div>
+      <p>Known-unicast validation. Local ${esc(report.local)} · Peer ${esc(report.peer)} · ${report.trials} trials · ${report.count} frames/trial · up to ${measurementRetries} measurement attempts/trial. Destination MAC and capture BPF are pinned per port pair.</p>
+    </div>
+    <div class="cards">
+      <div class="card"><span>Total Frames</span><strong>${totalSent}</strong></div>
+      <div class="card"><span>Matched</span><strong>${totalMatched}</strong></div>
+      <div class="card"><span>Overall Marker RX</span><strong>${(100 * totalMatched / totalSent).toFixed(1)}%</strong></div>
+      <div class="card"><span>Clean Directions</span><strong>${stableDirections}/${report.summary.length}</strong></div>
+      <div class="card"><span>Capture Undercount</span><strong>${undercountDirections}</strong></div>
+    </div>
+    <div class="topology">
+      <h3>Physical 4-Port Switch Topology</h3>
+      <div class="topoGrid">${topology}</div>
+    </div>
+    <div class="note"><strong>Method:</strong> Each direction sends known-unicast UDP frames to the exact destination MAC, then captures only frames matching source and destination MAC on the expected receiving NIC. A retry is used only for measurement setup errors, not to inflate packet counts.</div>
+    <div class="charts">
+      <div class="chart"><h3>Marker Receive Rate by Direction</h3><canvas id="rx"></canvas></div>
+      <div class="chart"><h3>API / Measurement Errors</h3><canvas id="api"></canvas></div>
+    </div>
+    <div class="chart" style="margin-top:16px"><h3>Loss / Undercount Rate</h3><canvas id="loss"></canvas></div>
+    <div class="heatmap"><h3>Trial Stability Heatmap</h3>${heatmap}</div>
+    <table><thead><tr><th>Direction</th><th>Verdict</th><th>Matched</th><th>RX</th><th>API Errors</th><th>Trials</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted">Generated artifact: <code>/reports/switch-deep-latest.html</code> and <code>/reports/switch-deep-latest.json</code>.</p>
+  </div>
+  <script>
+    const labels=${JSON.stringify(labels)};
+    new Chart(document.getElementById('rx'),{type:'bar',data:{labels,datasets:[{label:'RX %',data:${JSON.stringify(rx)},backgroundColor:'#0f6f78'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100}}}});
+    new Chart(document.getElementById('api'),{type:'bar',data:{labels,datasets:[{label:'API errors',data:${JSON.stringify(apiErrors)},backgroundColor:'#dc2626'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}}}}});
+    new Chart(document.getElementById('loss'),{type:'bar',data:{labels,datasets:[{label:'Loss / undercount %',data:${JSON.stringify(loss)},backgroundColor:'#b9651a'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{min:0,max:100}}}});
+  </script>
+</body>
+</html>`;
   fs.writeFileSync(path.join(reportsDir, 'switch-deep-latest.html'), html);
 }
 

@@ -5420,6 +5420,13 @@ async function caClear() {
   const addrIn = $('caAddrInput'); if (addrIn) addrIn.value = '';
   const exportBtn = $('caExportBtn'); if (exportBtn) exportBtn.disabled = true;
   const tpanel = $('caTimelinePanel'); if (tpanel) tpanel.classList.add('hidden');
+  // Reset display filter + chips
+  caState.displayFilter = '';
+  const filterEl = $('caDisplayFilter');
+  if (filterEl) filterEl.value = '';
+  document.querySelectorAll('.filterChip').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.filter === '');
+  });
   caUpdateCount();
 
   try {
@@ -5553,6 +5560,11 @@ async function caLoadWorkers() {
       const f = btn.dataset.filter;
       if (filterInput) { filterInput.value = f; filterInput.dispatchEvent(new Event('input')); }
     });
+  });
+
+  // Set initial active chip (displayFilter starts as '')
+  document.querySelectorAll('.filterChip').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.filter === caState.displayFilter);
   });
 
   // Row click → show detail

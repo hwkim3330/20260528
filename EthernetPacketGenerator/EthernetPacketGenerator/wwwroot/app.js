@@ -7,6 +7,7 @@ const state = {
   captureRows: [],
   captureTimer: null,
   serialTimer: null,
+  serialConnected: false,
   selectedGroupIdx: 0,
   selectedTcIdx: null,
 };
@@ -42,6 +43,15 @@ function esc(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+function tsNow() {
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `[${h}:${m}:${s}.${ms}]`;
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function initTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
@@ -50,6 +60,7 @@ function initTabs() {
       document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       tab.classList.add('active');
       $(tab.dataset.view)?.classList.add('active');
+      if (tab.dataset.view === 'hyperTermView') refreshSerialStatus();
     });
   });
 }
@@ -327,11 +338,12 @@ async function seqTermSend() {
   } catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
 }
 
-// ── Register ──────────────────────────────────────────────────────────────────
+// ── Register (Scenario Lab panel) ────────────────────────────────────────────
 async function refreshRegStatus() {
   try {
     const data = await api('/api/register/status');
     $('regStatus').textContent = `${data.serialConnected ? '● connected' : '○ disconnected'} — base ${data.baseAddress || '0x0'}`;
+    if (data.baseAddress) $('regBaseAddr').value = data.baseAddress;
   } catch { $('regStatus').textContent = 'offline'; }
 }
 
@@ -357,7 +369,7 @@ async function writeRegister() {
   }
 }
 
-// ── FDB ───────────────────────────────────────────────────────────────────────
+// ── FDB (Scenario Lab panel) ──────────────────────────────────────────────────
 function fdbPayload() {
   return { mac: $('fdbMac').value.trim(), port: Number($('fdbPort').value) || 0, vlanValid: $('fdbVlanValid').checked, vlanId: Number($('fdbVlanId').value) || 0 };
 }
@@ -373,44 +385,244 @@ async function fdbCall(path, payload = fdbPayload()) {
   }
 }
 
-// ── HyperTerminal (Serial) ────────────────────────────────────────────────────
-async function refreshSerialStatus() {
-  const data = await api('/api/serial/status');
-  const t = data.terminal || {};
-
-  const portSel = $('serialPort');
-  const curPort = portSel.value || t.selectedPort || '';
-  portSel.innerHTML = (t.ports || []).map(p =>
-    `<option value="${esc(p.portName || p.PortName)}">${esc(p.displayName || p.DisplayName || p.portName || p.PortName)}</option>`
-  ).join('');
-  if (curPort) portSel.value = curPort;
-
-  const baudSel = $('serialBaud');
-  const curBaud = baudSel.value || String(t.selectedBaudRate || 115200);
-  baudSel.innerHTML = (t.baudRates || [9600, 19200, 38400, 57600, 115200, 230400, 921600])
-    .map(b => `<option value="${b}">${b}</option>`).join('');
-  baudSel.value = curBaud;
-
-  const st = $('serialState');
-  st.textContent = t.connectionStatus || (t.isConnected ? 'connected' : 'disconnected');
-  st.style.color = t.isConnected ? 'var(--green)' : 'var(--muted)';
-
-  $('serialOutput').textContent = t.terminalOutput || 'No terminal output.';
-  $('serialOutput').scrollTop = $('serialOutput').scrollHeight;
-}
-
-async function connectSerial() {
+// ── Register Viewer (HyperTerminal tab) ──────────────────────────────────────
+async function rvRead(offset, valId, statusId) {
+  const stEl = $(statusId);
+  if (stEl) { stEl.textContent = ''; stEl.className = 'reg-status'; }
   try {
-    await api('/api/serial/connect', { method: 'POST', body: JSON.stringify({ port: $('serialPort').value, baudRate: Number($('serialBaud').value) || 115200 }) });
-    toast('Serial connected', 'ok');
-    await refreshSerialStatus();
-  } catch (err) { toast(`Serial connect failed: ${err.message}`, 'bad'); }
+    const data = await api('/api/register/read', { method: 'POST', body: JSON.stringify({ offset }) });
+    if (valId) $(valId).value = data.value || `0x${(data.valueDec || 0).toString(16).padStart(8,'0').toUpperCase()}`;
+    if (stEl) { stEl.textContent = 'OK'; stEl.className = 'reg-status ok'; }
+    return data;
+  } catch (err) {
+    if (stEl) stEl.textContent = `오류: ${err.message}`;
+    throw err;
+  }
 }
 
-async function disconnectSerial() {
-  await api('/api/serial/disconnect', { method: 'POST', body: '{}' });
-  toast('Serial disconnected', 'ok');
-  await refreshSerialStatus();
+async function rvWrite(offset, value, statusId) {
+  const stEl = $(statusId);
+  if (stEl) { stEl.textContent = ''; stEl.className = 'reg-status'; }
+  try {
+    await api('/api/register/write', { method: 'POST', body: JSON.stringify({ offset, value }) });
+    if (stEl) { stEl.textContent = '쓰기 완료'; stEl.className = 'reg-status ok'; }
+  } catch (err) {
+    if (stEl) stEl.textContent = `오류: ${err.message}`;
+    throw err;
+  }
+}
+
+function initRegViewer() {
+  // Generic data-rw buttons (data-off = ID of offset input, data-off-val = literal offset)
+  document.getElementById('regContent').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-rw]');
+    if (!btn) return;
+    const rw = btn.dataset.rw;
+    const valId = btn.dataset.val;
+    const stId = btn.dataset.st;
+    // offset can come from a literal value or an input element
+    const offset = btn.dataset.offVal || (btn.dataset.off ? $(btn.dataset.off).value : null);
+    if (!offset) return;
+    try {
+      if (rw === 'read') {
+        await rvRead(offset, valId, stId);
+      } else if (rw === 'write') {
+        const val = valId ? $(valId).value : '0x00000000';
+        await rvWrite(offset, val, stId);
+      }
+    } catch { /* status already updated */ }
+  });
+
+  // READ ALL buttons
+  $('sysctlReadAll')?.addEventListener('click', async () => {
+    await Promise.allSettled([
+      rvRead('0x000', 'rv-version', 'rv-st-version'),
+      rvRead('0x008', 'rv-enable', 'rv-st-enable'),
+      rvRead('0x00C', 'rv-ahb', 'rv-st-ahb'),
+    ]);
+  });
+
+  $('interruptReadAll')?.addEventListener('click', async () => {
+    const offCtrl = $('rv-intr-ctrl-off').value;
+    const offRaw  = $('rv-intr-raw-off').value;
+    const offMask = $('rv-intr-mask-off').value;
+    const offSw   = $('rv-intr-sw-off').value;
+    await Promise.allSettled([
+      rvRead(offCtrl, 'rv-intr-ctrl', 'rv-st-intr-ctrl'),
+      rvRead(offRaw,  'rv-intr-raw',  'rv-st-intr-raw'),
+      rvRead(offMask, 'rv-intr-mask', 'rv-st-intr-mask'),
+      rvRead(offSw,   'rv-intr-sw',   'rv-st-intr-sw'),
+    ]);
+  });
+
+  $('timestampReadAll')?.addEventListener('click', async () => {
+    await Promise.allSettled([
+      rvRead($('rv-ts-ns-off').value,    'rv-ts-ns',    'rv-st-ts'),
+      rvRead($('rv-ts-seclo-off').value, 'rv-ts-seclo', 'rv-st-ts'),
+      rvRead($('rv-ts-adj-off').value,   'rv-ts-adj',   'rv-st-ts-adj'),
+      rvRead($('rv-ts-clk-off').value,   'rv-ts-clk',   'rv-st-ts-clk'),
+    ]);
+  });
+
+  $('ledclockReadAll')?.addEventListener('click', async () => {
+    await Promise.allSettled([
+      rvRead($('rv-led-ctrl-off').value,  'rv-led-ctrl',  'rv-st-led'),
+      rvRead($('rv-ext-sw-off').value,    'rv-ext-sw',    'rv-st-ext-sw'),
+      rvRead($('rv-clk-limit-off').value, 'rv-clk-limit', 'rv-st-clk-limit'),
+    ]);
+  });
+
+  $('countReadAll')?.addEventListener('click', async () => {
+    await rvRead($('rv-count-off').value, 'rv-count-v', 'rv-st-count');
+  });
+
+  // FDB operations in Register Viewer
+  function rvFdbPayload() {
+    return {
+      mac: $('rv-fdbMac').value.trim(),
+      port: Number($('rv-fdbPort').value) || 0,
+      vlanValid: $('rv-fdbVlanValid').checked,
+      vlanId: Number($('rv-fdbVid').value) || 0,
+    };
+  }
+
+  async function rvFdbCall(path, payload = rvFdbPayload()) {
+    try {
+      const data = await api(path, { method: 'POST', body: JSON.stringify(payload) });
+      $('rv-fdbResult').textContent = JSON.stringify(data, null, 2);
+      toast(data.status || 'FDB done', 'ok');
+    } catch (err) {
+      $('rv-fdbResult').textContent = `FDB failed: ${err.message}`;
+      toast(`FDB failed: ${err.message}`, 'bad');
+    }
+  }
+
+  $('rv-fdbRead')?.addEventListener('click', () => rvFdbCall('/api/fdb/read'));
+  $('rv-fdbWrite')?.addEventListener('click', () => rvFdbCall('/api/fdb/write'));
+  $('rv-fdbDelete')?.addEventListener('click', () => rvFdbCall('/api/fdb/delete'));
+  $('rv-fdbFlush')?.addEventListener('click', () => { if (confirm('Flush all FDB entries?')) rvFdbCall('/api/fdb/flush', {}); });
+}
+
+// ── TOC Navigation ────────────────────────────────────────────────────────────
+function initTocNav() {
+  const content = $('regContent');
+  document.querySelectorAll('[data-sec]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-sec]').forEach(b => b.classList.remove('toc-active'));
+      btn.classList.add('toc-active');
+      const target = document.getElementById(`rsec-${btn.dataset.sec}`);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
+// ── Layout Toggle (⊞/⊟) ──────────────────────────────────────────────────────
+function initLayoutToggle() {
+  const btn = $('layoutToggle');
+  const content = $('hyperContent');
+  let horizontal = false;
+  btn.addEventListener('click', () => {
+    horizontal = !horizontal;
+    content.classList.toggle('horizontal', horizontal);
+    btn.textContent = horizontal ? '⊟' : '⊞';
+    btn.title = horizontal ? '상하 레이아웃으로 전환' : '3분할 레이아웃으로 전환';
+  });
+}
+
+// ── Splitter Drag ─────────────────────────────────────────────────────────────
+function initSplitter() {
+  const splitter = $('hyperSplitter');
+  const content  = $('hyperContent');
+  const terminal = document.querySelector('.hyper-terminal');
+  let dragging = false, startPos = 0, startSize = 0;
+
+  splitter.addEventListener('mousedown', e => {
+    dragging = true;
+    const isH = content.classList.contains('horizontal');
+    startPos  = isH ? e.clientX : e.clientY;
+    startSize = isH ? terminal.offsetWidth : terminal.offsetHeight;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const isH  = content.classList.contains('horizontal');
+    const delta = (isH ? e.clientX : e.clientY) - startPos;
+    const size  = Math.max(80, startSize - delta);
+    if (isH) terminal.style.width  = `${size}px`;
+    else     terminal.style.height = `${size}px`;
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+
+// ── HyperTerminal (Serial) ────────────────────────────────────────────────────
+function updateSerialUI(connected, statusText) {
+  state.serialConnected = connected;
+  const led  = $('serialLed');
+  const btn  = $('serialConnect');
+  const stEl = $('serialState');
+  led.classList.toggle('connected', connected);
+  btn.textContent = connected ? '연결 해제' : '연결';
+  btn.className   = connected ? 'danger' : 'primary';
+  btn.style.width = '80px';
+  if (stEl && statusText !== undefined) stEl.textContent = statusText;
+}
+
+async function refreshSerialStatus() {
+  try {
+    const data = await api('/api/serial/status');
+    const t = data.terminal || {};
+
+    const portSel = $('serialPort');
+    const curPort = portSel.value || t.selectedPort || '';
+    portSel.innerHTML = (t.ports || []).map(p =>
+      `<option value="${esc(p.portName || p.PortName)}">${esc(p.displayName || p.DisplayName || p.portName || p.PortName)}</option>`
+    ).join('');
+    if (curPort) portSel.value = curPort;
+
+    const baudSel = $('serialBaud');
+    const curBaud = baudSel.value || String(t.selectedBaudRate || 115200);
+    baudSel.innerHTML = (t.baudRates || [9600, 19200, 38400, 57600, 115200, 230400, 921600])
+      .map(b => `<option value="${b}">${b}</option>`).join('');
+    baudSel.value = curBaud;
+
+    updateSerialUI(!!t.isConnected, t.connectionStatus || (t.isConnected ? 'connected' : 'disconnected'));
+
+    const out = $('serialOutput');
+    if (t.terminalOutput !== undefined) {
+      out.textContent = t.terminalOutput || 'No terminal output.';
+      out.scrollTop = out.scrollHeight;
+    }
+  } catch (err) {
+    updateSerialUI(false, `offline — ${err.message}`);
+  }
+}
+
+async function toggleSerial() {
+  try {
+    if (state.serialConnected) {
+      await api('/api/serial/disconnect', { method: 'POST', body: '{}' });
+      toast('Serial disconnected', 'ok');
+    } else {
+      const port = $('serialPort').value;
+      const baud = Number($('serialBaud').value) || 115200;
+      await api('/api/serial/connect', { method: 'POST', body: JSON.stringify({ port, baudRate: baud }) });
+      toast(`Connected: ${port} @ ${baud}bps`, 'ok');
+    }
+    await refreshSerialStatus();
+  } catch (err) {
+    toast(`Serial error: ${err.message}`, 'bad');
+    await refreshSerialStatus();
+  }
+}
+
+function appendHyperTerm(text) {
+  const el = $('serialOutput');
+  if (!el) return;
+  const ts = tsNow();
+  el.textContent += `${ts}  ${text}\n`;
+  el.scrollTop = el.scrollHeight;
 }
 
 async function sendSerial() {
@@ -440,7 +652,9 @@ function initWebSocket() {
       if (msg.type === 'workerEvent') {
         const p = msg.payload || {};
         if (p.type === 'serialData' || p.type === 'terminal') {
-          appendSeqTerm(p.text || p.data || '');
+          const text = p.text || p.data || '';
+          appendHyperTerm(text);
+          appendSeqTerm(text);
         }
       }
     } catch { /* ignore parse errors */ }
@@ -452,6 +666,10 @@ function initWebSocket() {
 async function init() {
   initTabs();
   initWebSocket();
+  initLayoutToggle();
+  initSplitter();
+  initTocNav();
+  initRegViewer();
 
   $('startTime').textContent = new Date().toLocaleTimeString();
 
@@ -478,7 +696,7 @@ async function init() {
   $('seqTermInput').addEventListener('keydown', e => { if (e.key === 'Enter') seqTermSend(); });
   $('clearSeqTerminal').addEventListener('click', () => { $('seqTermOutput').textContent = ''; });
 
-  // Register / FDB
+  // Register / FDB (Scenario Lab panel)
   $('regStatusRefresh').addEventListener('click', refreshRegStatus);
   $('regRead').addEventListener('click', readRegister);
   $('regWrite').addEventListener('click', writeRegister);
@@ -489,10 +707,12 @@ async function init() {
 
   // HyperTerminal
   $('serialRefresh').addEventListener('click', refreshSerialStatus);
-  $('serialConnect').addEventListener('click', connectSerial);
-  $('serialDisconnect').addEventListener('click', disconnectSerial);
+  $('serialConnect').addEventListener('click', toggleSerial);
   $('serialSend').addEventListener('click', sendSerial);
-  $('serialClear').addEventListener('click', async () => { await api('/api/serial/clear', { method: 'POST', body: '{}' }); await refreshSerialStatus(); });
+  $('serialClear').addEventListener('click', async () => {
+    try { await api('/api/serial/clear', { method: 'POST', body: '{}' }); } catch { /* best effort */ }
+    $('serialOutput').textContent = '';
+  });
   $('serialInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendSerial(); });
 
   // Settings

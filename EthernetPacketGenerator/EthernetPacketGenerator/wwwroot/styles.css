@@ -1,3 +1,4 @@
+/* ── Dark theme — matches C# Styles.xaml ─────────────────────────── */
 :root {
   --bg:          #1E1E2E;
   --surface:     #2A2A3E;
@@ -12,6 +13,7 @@
   --tab-dim:     #8899BB;
   --green:       #22c55e;
   --red:         #ef4444;
+  --terminal-bg: #0A0A12;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -202,7 +204,7 @@ tbody tr.selected { background: var(--sel) !important; }
 /* ── Terminal ─────────────────────────────────────────────────────── */
 .terminal-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .terminal-output {
-  flex: 1; overflow-y: auto; background: #0A0A12; color: var(--hex);
+  flex: 1; overflow-y: auto; background: var(--terminal-bg,#0A0A12); color: var(--hex);
   font-family: Consolas, monospace; font-size: 12px;
   padding: 10px; line-height: 1.6; white-space: pre-wrap;
 }
@@ -301,4 +303,118 @@ code {
   .form-grid { grid-template-columns: repeat(2, 1fr); }
   .card-row { grid-template-columns: 1fr; }
   .preview-split, .capture-split { grid-template-columns: 1fr; height: auto; }
+}
+
+/* ── HyperTerminal tab ───────────────────────────────────────────────── */
+.hyper-shell { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.hyper-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  background: var(--surface-alt); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; height: 36px;
+}
+.toolbar-label { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.hyper-toolbar select, .hyper-toolbar button { flex-shrink: 0; }
+
+.led-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: #FF4444; box-shadow: 0 0 5px #FF4444;
+  transition: background .3s, box-shadow .3s;
+}
+.led-dot.connected { background: #44FF88; box-shadow: 0 0 5px #44FF88; }
+
+.serial-status-text { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* ── Hyper content (vertical default, horizontal 3-col) ─────────────── */
+.hyper-content { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.hyper-content.horizontal { flex-direction: row; }
+
+/* ── Register Viewer ─────────────────────────────────────────────────── */
+.reg-viewer { display: flex; flex: 1; overflow: hidden; }
+
+.reg-toc {
+  width: 145px; flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.reg-toc-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
+
+.toc-group { margin-bottom: 1px; }
+
+button.toc-head {
+  display: block; width: 100%; text-align: left;
+  padding: 5px 8px; font-size: 10px; font-weight: 700;
+  background: transparent; color: var(--muted);
+  border: none; border-radius: 0; cursor: pointer; outline: none;
+}
+button.toc-head:hover { background: rgba(124,124,255,.1); color: var(--fg); border-color: transparent; }
+button.toc-head.toc-active { color: var(--accent); background: rgba(124,124,255,.12); border-color: transparent; }
+
+button.toc-sub {
+  display: block; width: 100%; text-align: left;
+  padding: 3px 8px 3px 18px; font-size: 10px;
+  background: transparent; color: var(--muted);
+  border: none; border-radius: 0; cursor: pointer; outline: none;
+}
+button.toc-sub:hover { background: rgba(124,124,255,.08); color: var(--fg); border-color: transparent; }
+button.toc-sub.toc-active { color: var(--accent); border-color: transparent; }
+
+.toc-baseaddr {
+  padding: 8px; border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.toc-baseaddr label { font-size: 10px; color: var(--muted); margin-bottom: 3px; display: block; }
+
+.reg-content { flex: 1; overflow-y: auto; padding: 8px; background: var(--bg); }
+
+.rsec { margin-bottom: 10px; scroll-margin-top: 4px; }
+
+.rsec-head {
+  background: var(--surface-alt); padding: 5px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  border: 1px solid var(--border); border-radius: 4px 4px 0 0;
+  font-size: 11px; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+.rsec-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 6px; padding: 6px;
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 4px 4px; background: var(--surface);
+}
+
+.reg-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; padding: 8px; scroll-margin-top: 4px;
+}
+.reg-card-title {
+  font-size: 10px; font-weight: 600; color: var(--fg);
+  margin-bottom: 6px;
+}
+.reg-card-title small { color: var(--muted); font-size: 9px; margin-left: 5px; font-weight: 400; }
+.reg-card .field { margin-bottom: 5px; }
+.reg-card .row { display: flex; gap: 5px; flex-wrap: wrap; margin: 5px 0 0; }
+.reg-status { font-size: 10px; color: #FF6B6B; min-height: 14px; margin-top: 3px; }
+.reg-status.ok { color: #44FF88; }
+input.mono { font-family: Consolas, monospace; }
+
+/* ── Hyper splitter ──────────────────────────────────────────────────── */
+.hyper-splitter {
+  background: var(--border); flex-shrink: 0;
+  cursor: row-resize; height: 6px; transition: background .15s;
+  user-select: none;
+}
+.hyper-content.horizontal .hyper-splitter {
+  cursor: col-resize; width: 6px; height: auto;
+}
+.hyper-splitter:hover { background: var(--accent); }
+
+/* ── Hyper terminal ──────────────────────────────────────────────────── */
+.hyper-terminal {
+  display: flex; flex-direction: column; overflow: hidden;
+  flex-shrink: 0; height: 220px; min-height: 80px;
+}
+.hyper-content.horizontal .hyper-terminal {
+  width: 360px; height: auto; min-width: 180px; min-height: 0;
+  border-left: 1px solid var(--border);
 }

@@ -928,6 +928,354 @@ async function fdbCtrlLoadDefault() {
   } catch(err) { setRegStatus('rv-st-fdb-ctrl', `오류: ${err.message}`, false); }
 }
 
+// ── INTERRUPT ─────────────────────────────────────────────────────────────────
+let _intrPollTimer = null;
+
+function initIntrDots() {
+  const portDiv = $('rv-intr-port-dots');
+  const mdioDiv = $('rv-intr-mdio-dots');
+  const pmDiv   = $('rv-intr-port-mask');
+  const mmDiv   = $('rv-intr-mdio-mask');
+  if (portDiv && !portDiv.children.length) {
+    for (let i = 0; i < 16; i++) {
+      portDiv.insertAdjacentHTML('beforeend',
+        `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;" title="PORT${i}"><span id="rv-intr-p${i}" class="led-dot"></span>P${i}</span>`);
+    }
+  }
+  if (mdioDiv && !mdioDiv.children.length) {
+    for (let i = 0; i < 8; i++) {
+      mdioDiv.insertAdjacentHTML('beforeend',
+        `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;"><span id="rv-intr-m${i}" class="led-dot"></span>M${i}</span>`);
+    }
+  }
+  if (pmDiv && !pmDiv.children.length) {
+    for (let i = 0; i < 16; i++) {
+      pmDiv.insertAdjacentHTML('beforeend',
+        `<label class="rv-chk" title="PORT${i} mask"><input id="rv-intr-pm${i}" type="checkbox"><span>P${i}</span></label>`);
+    }
+  }
+  if (mmDiv && !mmDiv.children.length) {
+    for (let i = 0; i < 8; i++) {
+      mmDiv.insertAdjacentHTML('beforeend',
+        `<label class="rv-chk"><input id="rv-intr-mm${i}" type="checkbox"><span>M${i}</span></label>`);
+    }
+  }
+}
+
+async function intrCtrlRead() {
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x010' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    const low = (v & 1) !== 0;
+    const actHigh = $('rv-intr-act-high'); const actLow = $('rv-intr-act-low');
+    if (actHigh) actHigh.checked = !low;
+    if (actLow)  actLow.checked  = low;
+    setRegStatus('rv-st-intr-ctrl', `OK — Active ${low ? 'Low' : 'High'}`, true);
+  } catch(err) { setRegStatus('rv-st-intr-ctrl', `오류: ${err.message}`, false); }
+}
+
+async function intrCtrlApply() {
+  const low = $('rv-intr-act-low')?.checked ? 1 : 0;
+  await rvWrite('0x010', `0x${low.toString(16).padStart(8,'0')}`, 'rv-st-intr-ctrl');
+}
+
+async function intrRawRead() {
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x014' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    for (let i = 0; i < 16; i++) {
+      const dot = $(`rv-intr-p${i}`);
+      if (dot) dot.classList.toggle('connected', ((v >> i) & 1) !== 0);
+    }
+    for (let i = 0; i < 8; i++) {
+      const dot = $(`rv-intr-m${i}`);
+      if (dot) dot.classList.toggle('connected', ((v >> (16+i)) & 1) !== 0);
+    }
+    const swDot = $('rv-intr-sw-dot');
+    if (swDot) swDot.classList.toggle('connected', ((v >>> 31) & 1) !== 0);
+    setRegStatus('rv-st-intr-raw', `0x${(v>>>0).toString(16).toUpperCase().padStart(8,'0')}`, true);
+  } catch(err) { setRegStatus('rv-st-intr-raw', `오류: ${err.message}`, false); }
+}
+
+function intrTogglePoll() {
+  const btn = $('rv-intr-raw-poll');
+  if (_intrPollTimer) {
+    clearInterval(_intrPollTimer); _intrPollTimer = null;
+    if (btn) { btn.textContent = '▶ Poll'; btn.className = 'small'; }
+  } else {
+    _intrPollTimer = setInterval(intrRawRead, 500);
+    if (btn) { btn.textContent = '■ Stop'; btn.className = 'small danger'; }
+    intrRawRead();
+  }
+}
+
+async function intrMaskRead() {
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x018' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    for (let i = 0; i < 16; i++) { const c = $(`rv-intr-pm${i}`); if (c) c.checked = ((v>>i)&1)!==0; }
+    for (let i = 0; i < 8;  i++) { const c = $(`rv-intr-mm${i}`); if (c) c.checked = ((v>>(16+i))&1)!==0; }
+    const sw = $('rv-intr-sw-mask'); if (sw) sw.checked = ((v>>>31)&1) !== 0;
+    setRegStatus('rv-st-intr-mask', 'OK', true);
+  } catch(err) { setRegStatus('rv-st-intr-mask', `오류: ${err.message}`, false); }
+}
+
+async function intrMaskApply() {
+  let v = 0;
+  for (let i = 0; i < 16; i++) { if ($(`rv-intr-pm${i}`)?.checked) v |= (1 << i); }
+  for (let i = 0; i < 8;  i++) { if ($(`rv-intr-mm${i}`)?.checked) v |= (1 << (16+i)); }
+  if ($('rv-intr-sw-mask')?.checked) v |= 0x80000000;
+  await rvWrite('0x018', `0x${(v>>>0).toString(16).toUpperCase().padStart(8,'0')}`, 'rv-st-intr-mask');
+}
+
+async function intrSwTrigger() {
+  setRegStatus('rv-st-intr-sw', '트리거 발생 중...', true);
+  try {
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x01C', value:'0x00000001' }) });
+    setRegStatus('rv-st-intr-sw', 'SW Trigger 완료', true);
+    const btn = $('rv-intr-sw-trigger');
+    if (btn) { btn.className = 'small primary'; setTimeout(() => { btn.className = 'small danger'; }, 600); }
+  } catch(err) { setRegStatus('rv-st-intr-sw', `오류: ${err.message}`, false); }
+}
+
+// ── TIMESTAMP ─────────────────────────────────────────────────────────────────
+async function tsReadTime() {
+  setRegStatus('rv-st-ts', '읽는 중...', true);
+  try {
+    const dNs    = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x020' }) });
+    const dSecLo = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x024' }) });
+    const dSecHi = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x028' }) });
+    const ns    = parseInt(dNs.value    || '0', 16) >>> 0;
+    const secLo = parseInt(dSecLo.value || '0', 16) >>> 0;
+    const secHi = parseInt(dSecHi.value || '0', 16) >>> 0;
+    const sec   = BigInt(secHi & 0xFFFF) * 4294967296n + BigInt(secLo >>> 0);
+    const dt    = new Date(Number(sec) * 1000);
+    const cur   = `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}  ` +
+                  `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}.` +
+                  `${String(ns).padStart(9,'0')} ns`;
+    if ($('rv-ts-current')) $('rv-ts-current').value = cur;
+    setRegStatus('rv-st-ts', 'OK', true);
+  } catch(err) { setRegStatus('rv-st-ts', `오류: ${err.message}`, false); }
+}
+
+function tsSetNow() {
+  const now = new Date();
+  if ($('rv-ts-year'))  $('rv-ts-year').value  = now.getFullYear();
+  if ($('rv-ts-month')) $('rv-ts-month').value = now.getMonth()+1;
+  if ($('rv-ts-day'))   $('rv-ts-day').value   = now.getDate();
+  if ($('rv-ts-hour'))  $('rv-ts-hour').value  = now.getHours();
+  if ($('rv-ts-min'))   $('rv-ts-min').value   = now.getMinutes();
+  if ($('rv-ts-sec'))   $('rv-ts-sec').value   = now.getSeconds();
+  if ($('rv-ts-set-ns')) $('rv-ts-set-ns').value = 0;
+}
+
+async function tsSetTime() {
+  setRegStatus('rv-st-ts', '설정 중...', true);
+  try {
+    const yr = parseInt($('rv-ts-year')?.value  || '2025');
+    const mo = parseInt($('rv-ts-month')?.value || '1');
+    const dy = parseInt($('rv-ts-day')?.value   || '1');
+    const hr = parseInt($('rv-ts-hour')?.value  || '0');
+    const mn = parseInt($('rv-ts-min')?.value   || '0');
+    const sc = parseInt($('rv-ts-sec')?.value   || '0');
+    const ns = parseInt($('rv-ts-set-ns')?.value || '0') >>> 0;
+    const unixSec = BigInt(Math.floor(new Date(yr, mo-1, dy, hr, mn, sc).getTime() / 1000));
+    const secLo   = Number(unixSec & 0xFFFFFFFFn) >>> 0;
+    const secHi   = Number((unixSec >> 32n) & 0xFFFFn) >>> 0;
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x020', value:`0x${ns.toString(16).padStart(8,'0')}` }) });
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x024', value:`0x${secLo.toString(16).padStart(8,'0')}` }) });
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x028', value:`0x${secHi.toString(16).padStart(8,'0')}` }) });
+    setRegStatus('rv-st-ts', '시간 설정 완료', true);
+  } catch(err) { setRegStatus('rv-st-ts', `오류: ${err.message}`, false); }
+}
+
+async function tsReadClock() {
+  setRegStatus('rv-st-ts-clk', '읽는 중...', true);
+  try {
+    const dA  = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x02C' }) });
+    const dC1 = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x030' }) });
+    const addend    = parseInt(dA.value  || '0', 16) >>> 0;
+    const ctrl1     = parseInt(dC1.value || '0', 16) >>> 0;
+    const increment = ctrl1 & 0xFFFF;
+    const scaled    = increment + addend / 4294967296.0;
+    const nsPerTick = scaled * 1e9 / 4294967296.0;
+    const mhz       = nsPerTick > 0 ? Math.round(1000.0 / nsPerTick * 1e6) / 1e6 : 0;
+    if ($('rv-ts-clk-mhz')) $('rv-ts-clk-mhz').value = mhz;
+    setRegStatus('rv-st-ts-clk', `INCREMENT=${increment}  ADDEND=0x${addend.toString(16).toUpperCase().padStart(8,'0')}`, true);
+  } catch(err) { setRegStatus('rv-st-ts-clk', `오류: ${err.message}`, false); }
+}
+
+async function tsApplyClock() {
+  const mhz = parseFloat($('rv-ts-clk-mhz')?.value || '200');
+  if (!mhz) { setRegStatus('rv-st-ts-clk', 'MHz 값 오류', false); return; }
+  setRegStatus('rv-st-ts-clk', '설정 중...', true);
+  try {
+    const periodNs  = 1000.0 / mhz;
+    const exactIncr = periodNs * 4294967296.0 / 1e9;
+    const increment = Math.floor(exactIncr) >>> 0;
+    const addend    = Math.round((exactIncr - increment) * 4294967296.0) >>> 0;
+    const dC1 = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x030' }) });
+    let ctrl1 = (parseInt(dC1.value || '0', 16) >>> 0) & 0xFFFF0000;
+    ctrl1 |= (increment & 0xFFFF);
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x02C', value:`0x${addend.toString(16).padStart(8,'0')}` }) });
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x030', value:`0x${ctrl1.toString(16).padStart(8,'0')}` }) });
+    setRegStatus('rv-st-ts-clk', `완료 INCREMENT=${increment}  ADDEND=0x${addend.toString(16).toUpperCase().padStart(8,'0')}`, true);
+  } catch(err) { setRegStatus('rv-st-ts-clk', `오류: ${err.message}`, false); }
+}
+
+async function tsReadPps() {
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x030' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    const src = (v >> 16) & 0x3;
+    const wid = ((v >> 24) & 0xFF) * 2;
+    document.querySelectorAll('input[name="ts-pps-src"]').forEach(r => { r.checked = parseInt(r.value) === (src >= 2 ? 2 : src); });
+    if ($('rv-ts-pps-width')) $('rv-ts-pps-width').value = wid;
+  } catch { /* ignore */ }
+}
+
+async function tsApplyPps() {
+  try {
+    const src = parseInt(document.querySelector('input[name="ts-pps-src"]:checked')?.value || '1');
+    const wid = parseInt($('rv-ts-pps-width')?.value || '100');
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x030' }) });
+    let v = (parseInt(d.value || '0', 16) >>> 0) & ~0xFF030000;
+    v |= (src & 0x3) << 16;
+    v |= ((Math.floor(wid / 2) & 0xFF) << 24);
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x030', value:`0x${v.toString(16).padStart(8,'0')}` }) });
+    setRegStatus('rv-st-ts-clk', 'PPS 설정 완료', true);
+  } catch(err) { setRegStatus('rv-st-ts-clk', `오류: ${err.message}`, false); }
+}
+
+async function tsAdjNs(inc) {
+  const ms  = parseInt($('rv-ts-ns-adj')?.value || '0');
+  const nsV = (Math.abs(ms) * 1000000) >>> 0;
+  const v   = (nsV & 0x3FFFFFFF) | (inc ? 0x40000000 : 0x80000000);
+  await rvWrite('0x034', `0x${v.toString(16).padStart(8,'0')}`, 'rv-st-ts-adj');
+}
+
+async function tsAdjSec(inc) {
+  const s = parseInt($('rv-ts-sec-adj')?.value || '0');
+  const v = (Math.abs(s) & 0x3FFFFFFF) | (inc ? 0x40000000 : 0x80000000);
+  await rvWrite('0x038', `0x${v.toString(16).padStart(8,'0')}`, 'rv-st-ts-adj');
+}
+
+// ── LED / CLOCK ───────────────────────────────────────────────────────────────
+const LED_FPGA_LABELS = ['System CLK Blink','AHB CLK Blink','RGMII CLK Blink','Reset_n','EXT_SW[0]','EXT_SW[1]','EXT_SW[2]','EXT_SW[3]'];
+
+function initLedDots() {
+  const fpgaDiv = $('rv-led-fpga-dots');
+  const regDiv  = $('rv-led-reg-chks');
+  const swDiv   = $('rv-ext-sw-dots');
+  if (fpgaDiv && !fpgaDiv.children.length) {
+    LED_FPGA_LABELS.forEach((lbl, i) =>
+      fpgaDiv.insertAdjacentHTML('beforeend',
+        `<div style="display:flex;align-items:center;gap:4px;font-size:11px;margin:1px 0;"><span id="rv-led-fpga-${i}" class="led-dot"></span>${esc(lbl)}</div>`)
+    );
+  }
+  if (regDiv && !regDiv.children.length) {
+    for (let i = 0; i < 8; i++)
+      regDiv.insertAdjacentHTML('beforeend',
+        `<label class="rv-chk"><input id="rv-led-rb-${i}" type="checkbox"><span>LED${i}</span></label>`);
+  }
+  if (swDiv && !swDiv.children.length) {
+    for (let i = 0; i < 6; i++)
+      swDiv.insertAdjacentHTML('beforeend',
+        `<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;"><span id="rv-ext-sw-${i}" class="led-dot"></span>SW${i}</span>`);
+  }
+}
+
+function ledModeChanged() {
+  const mode = parseInt(document.querySelector('input[name="led-mode"]:checked')?.value ?? '1');
+  const fpgaDiv  = $('rv-led-fpga-dots');
+  const regDiv   = $('rv-led-reg-chks');
+  const cpuWarn  = $('rv-led-cpu-warn');
+  const applyReg = $('rv-led-apply-reg');
+  if (fpgaDiv)  fpgaDiv.style.display  = mode === 1 ? '' : 'none';
+  if (regDiv)   regDiv.style.display   = mode === 3 ? '' : 'none';
+  if (cpuWarn)  cpuWarn.style.display  = mode === 0 ? '' : 'none';
+  if (applyReg) applyReg.style.display = mode === 3 ? '' : 'none';
+}
+
+async function ledRead() {
+  setRegStatus('rv-st-led', '읽는 중...', true);
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x060' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    const mode = (v >> 8) & 0x3;
+    const leds = v & 0xFF;
+    document.querySelectorAll('input[name="led-mode"]').forEach(r => { r.checked = parseInt(r.value) === mode; });
+    for (let i = 0; i < 8; i++) {
+      const on = ((leds >> i) & 1) !== 0;
+      const fpgaDot = $(`rv-led-fpga-${i}`); if (fpgaDot) fpgaDot.classList.toggle('connected', on);
+      const regChk  = $(`rv-led-rb-${i}`);   if (regChk)  regChk.checked = on;
+    }
+    ledModeChanged();
+    setRegStatus('rv-st-led', `OK — mode=${mode}  leds=0x${leds.toString(16).padStart(2,'0').toUpperCase()}`, true);
+  } catch(err) { setRegStatus('rv-st-led', `오류: ${err.message}`, false); }
+}
+
+async function ledApplyMode() {
+  const mode = parseInt(document.querySelector('input[name="led-mode"]:checked')?.value ?? '1');
+  setRegStatus('rv-st-led', '설정 중...', true);
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x060' }) });
+    let v = (parseInt(d.value || '0', 16) >>> 0) & ~0x300;
+    v |= (mode << 8);
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x060', value:`0x${v.toString(16).padStart(8,'0')}` }) });
+    ledModeChanged();
+    setRegStatus('rv-st-led', 'LED 모드 설정 완료', true);
+  } catch(err) { setRegStatus('rv-st-led', `오류: ${err.message}`, false); }
+}
+
+async function ledApplyReg() {
+  let leds = 0;
+  for (let i = 0; i < 8; i++) { if ($(`rv-led-rb-${i}`)?.checked) leds |= (1 << i); }
+  setRegStatus('rv-st-led', '설정 중...', true);
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x060' }) });
+    let v = (parseInt(d.value || '0', 16) >>> 0) & ~0xFF;
+    v |= leds;
+    await api('/api/register/write', { method:'POST', body: JSON.stringify({ offset:'0x060', value:`0x${v.toString(16).padStart(8,'0')}` }) });
+    setRegStatus('rv-st-led', 'LED 출력 설정 완료', true);
+  } catch(err) { setRegStatus('rv-st-led', `오류: ${err.message}`, false); }
+}
+
+async function extSwRead() {
+  try {
+    const d = await api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x064' }) });
+    const v = parseInt(d.value || '0', 16) >>> 0;
+    for (let i = 0; i < 6; i++) {
+      const dot = $(`rv-ext-sw-${i}`);
+      if (dot) dot.classList.toggle('connected', ((v >> i) & 1) !== 0);
+    }
+    setRegStatus('rv-st-ext-sw', `0x${(v>>>0).toString(16).toUpperCase().padStart(8,'0')}`, true);
+  } catch(err) { setRegStatus('rv-st-ext-sw', `오류: ${err.message}`, false); }
+}
+
+function clkLimitToMhz(limit) { return limit > 0 ? Math.round(limit * 2 / 1e6 * 1e6) / 1e6 : 0; }
+function clkMhzToLimit(mhz)   { return Math.round(mhz * 1e6 / 2) >>> 0; }
+
+async function clkRead() {
+  setRegStatus('rv-st-clk-limit', '읽는 중...', true);
+  try {
+    const [d0, d1, dr] = await Promise.all([
+      api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x068' }) }),
+      api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x06C' }) }),
+      api('/api/register/read', { method:'POST', body: JSON.stringify({ offset:'0x0D0' }) }),
+    ]);
+    if ($('rv-clk-sys'))   $('rv-clk-sys').value   = clkLimitToMhz(parseInt(d0.value || '0', 16) >>> 0);
+    if ($('rv-clk-ahb'))   $('rv-clk-ahb').value   = clkLimitToMhz(parseInt(d1.value || '0', 16) >>> 0);
+    if ($('rv-clk-rgmii')) $('rv-clk-rgmii').value = clkLimitToMhz(parseInt(dr.value || '0', 16) >>> 0);
+    setRegStatus('rv-st-clk-limit', 'OK', true);
+  } catch(err) { setRegStatus('rv-st-clk-limit', `오류: ${err.message}`, false); }
+}
+
+async function clkApply(offset, inputId) {
+  const mhz = parseFloat($(inputId)?.value || '0');
+  await rvWrite(offset, `0x${clkMhzToLimit(mhz).toString(16).padStart(8,'0')}`, 'rv-st-clk-limit');
+}
+
 // ── COUNT Viewer ──────────────────────────────────────────────────────────────
 async function countRead() {
   const port = $('rv-count-port')?.value || 'all';
@@ -1100,30 +1448,55 @@ function initRegViewer() {
   });
 
   // ── INTERRUPT ─────────────────────────────────────────────────────────────
-  $('interruptReadAll')?.addEventListener('click', () =>
-    Promise.allSettled([
-      rvRead($('rv-intr-ctrl-off')?.value || '0x010', 'rv-intr-ctrl', 'rv-st-intr-ctrl'),
-      rvRead($('rv-intr-raw-off')?.value  || '0x014', 'rv-intr-raw',  'rv-st-intr-raw'),
-      rvRead($('rv-intr-mask-off')?.value || '0x018', 'rv-intr-mask', 'rv-st-intr-mask'),
-      rvRead($('rv-intr-sw-off')?.value   || '0x01C', 'rv-intr-sw',   'rv-st-intr-sw'),
-    ])
-  );
+  initIntrDots();
+  $('interruptReadAll')?.addEventListener('click', () => Promise.allSettled([intrCtrlRead(), intrRawRead(), intrMaskRead()]));
+  $('rv-intr-ctrl-read')?.addEventListener('click', intrCtrlRead);
+  $('rv-intr-ctrl-apply')?.addEventListener('click', intrCtrlApply);
+  $('rv-intr-raw-read')?.addEventListener('click', intrRawRead);
+  $('rv-intr-raw-poll')?.addEventListener('click', intrTogglePoll);
+  $('rv-intr-mask-read')?.addEventListener('click', intrMaskRead);
+  $('rv-intr-mask-apply')?.addEventListener('click', intrMaskApply);
+  $('rv-intr-sw-trigger')?.addEventListener('click', intrSwTrigger);
 
-  $('timestampReadAll')?.addEventListener('click', () =>
-    Promise.allSettled([
-      rvRead($('rv-ts-ns-off')?.value    || '0x020', 'rv-ts-ns',    'rv-st-ts'),
-      rvRead($('rv-ts-seclo-off')?.value || '0x024', 'rv-ts-seclo', 'rv-st-ts'),
-      rvRead($('rv-ts-adj-off')?.value   || '0x030', 'rv-ts-adj',   'rv-st-ts-adj'),
-      rvRead($('rv-ts-clk-off')?.value   || '0x038', 'rv-ts-clk',   'rv-st-ts-clk'),
-    ])
-  );
+  // ── TIMESTAMP ─────────────────────────────────────────────────────────────
+  $('timestampReadAll')?.addEventListener('click', () => Promise.allSettled([tsReadTime(), tsReadClock(), tsReadPps()]));
+  $('rv-ts-read-time')?.addEventListener('click', tsReadTime);
+  $('rv-ts-now')?.addEventListener('click', tsSetNow);
+  $('rv-ts-set-time')?.addEventListener('click', tsSetTime);
+  $('rv-ts-read-clock')?.addEventListener('click', tsReadClock);
+  $('rv-ts-apply-clock')?.addEventListener('click', tsApplyClock);
+  $('rv-ts-read-pps')?.addEventListener('click', tsReadPps);
+  $('rv-ts-apply-pps')?.addEventListener('click', tsApplyPps);
+  $('rv-ts-ns-inc')?.addEventListener('click', () => tsAdjNs(true));
+  $('rv-ts-ns-dec')?.addEventListener('click', () => tsAdjNs(false));
+  $('rv-ts-sec-inc')?.addEventListener('click', () => tsAdjSec(true));
+  $('rv-ts-sec-dec')?.addEventListener('click', () => tsAdjSec(false));
 
-  $('ledclockReadAll')?.addEventListener('click', () =>
-    Promise.allSettled([
-      rvRead($('rv-led-ctrl-off')?.value  || '0x040', 'rv-led-ctrl',  'rv-st-led'),
-      rvRead($('rv-ext-sw-off')?.value    || '0x044', 'rv-ext-sw',    'rv-st-ext-sw'),
-      rvRead($('rv-clk-limit-off')?.value || '0x048', 'rv-clk-limit', 'rv-st-clk-limit'),
-    ])
+  // ── LED / CLOCK ───────────────────────────────────────────────────────────
+  initLedDots();
+  document.querySelectorAll('input[name="led-mode"]').forEach(r => r.addEventListener('change', ledModeChanged));
+  $('ledclockReadAll')?.addEventListener('click', () => Promise.allSettled([ledRead(), extSwRead(), clkRead()]));
+  $('rv-led-read')?.addEventListener('click', ledRead);
+  $('rv-led-apply-mode')?.addEventListener('click', ledApplyMode);
+  $('rv-led-apply-reg')?.addEventListener('click', ledApplyReg);
+  $('rv-ext-sw-read')?.addEventListener('click', extSwRead);
+  $('rv-clk-read')?.addEventListener('click', clkRead);
+  $('rv-clk-sys-apply')?.addEventListener('click', () => clkApply('0x068', 'rv-clk-sys'));
+  $('rv-clk-ahb-apply')?.addEventListener('click', () => clkApply('0x06C', 'rv-clk-ahb'));
+  $('rv-clk-rgmii-apply')?.addEventListener('click', () => clkApply('0x0D0', 'rv-clk-rgmii'));
+  $('rv-clk-apply-all')?.addEventListener('click', () => Promise.allSettled([
+    clkApply('0x068', 'rv-clk-sys'),
+    clkApply('0x06C', 'rv-clk-ahb'),
+    clkApply('0x0D0', 'rv-clk-rgmii'),
+  ]));
+
+  // ── TEST DATA ─────────────────────────────────────────────────────────────
+  const TD_OFFSETS = ['0x040','0x044','0x048','0x04C','0x050','0x054','0x058','0x05C'];
+  $('testdataReadAll')?.addEventListener('click', () =>
+    Promise.allSettled(TD_OFFSETS.map((off, i) => rvRead(off, `rv-td-${i}`, `rv-st-td-${i}`)))
+  );
+  $('testdataWriteAll')?.addEventListener('click', () =>
+    Promise.allSettled(TD_OFFSETS.map((off, i) => rvWrite(off, $(`rv-td-${i}`)?.value || '0x00000000', `rv-st-td-${i}`)))
   );
 
   $('rv-count-read')?.addEventListener('click', countRead);

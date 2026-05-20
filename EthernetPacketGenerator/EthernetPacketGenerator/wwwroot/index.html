@@ -448,41 +448,55 @@
               <div id="rsec-interrupt" class="rsec">
                 <div class="rsec-head">INTERRUPT <button class="small" id="interruptReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
+                  <!-- INTERRUPT_CTRL 0x010 -->
                   <div class="reg-card" id="rsec-intr-ctrl">
-                    <div class="reg-card-title">Interrupt Polarity <small>INTERRUPT_CTRL</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-intr-ctrl-off" class="mono" value="0x010" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-intr-ctrl" class="mono" value="0x00000000"></div>
+                    <div class="reg-card-title">Interrupt Polarity <small>0x010</small></div>
+                    <div style="display:flex;gap:14px;margin:6px 0;">
+                      <label class="rv-chk"><input id="rv-intr-act-high" type="radio" name="intr-pol" value="0" checked><span>Active High</span></label>
+                      <label class="rv-chk"><input id="rv-intr-act-low"  type="radio" name="intr-pol" value="1"><span>Active Low</span></label>
+                    </div>
                     <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-intr-ctrl-off" data-val="rv-intr-ctrl" data-st="rv-st-intr-ctrl">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-intr-ctrl-off" data-val="rv-intr-ctrl" data-st="rv-st-intr-ctrl">Write</button>
+                      <button class="small primary" id="rv-intr-ctrl-read">Read</button>
+                      <button class="small" id="rv-intr-ctrl-apply">Apply</button>
                     </div>
                     <div class="reg-status" id="rv-st-intr-ctrl"></div>
                   </div>
+                  <!-- RAW_INTERRUPT 0x014 -->
                   <div class="reg-card" id="rsec-intr-raw">
-                    <div class="reg-card-title">RAW INTERRUPT <small>INTR_RAW</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-intr-raw-off" class="mono" value="0x014" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-intr-raw" class="mono" readonly placeholder="—"></div>
-                    <div class="row"><button class="small primary" data-rw="read" data-off="rv-intr-raw-off" data-val="rv-intr-raw" data-st="rv-st-intr-raw">Read</button></div>
+                    <div class="reg-card-title">RAW INTERRUPT <small>0x014</small></div>
+                    <div style="font-size:10px;color:var(--muted);margin-top:4px;">PORT [15:0]</div>
+                    <div id="rv-intr-port-dots" style="display:flex;flex-wrap:wrap;gap:3px;margin:3px 0 6px;"></div>
+                    <div style="font-size:10px;color:var(--muted);">MDIO [23:16]</div>
+                    <div id="rv-intr-mdio-dots" style="display:flex;flex-wrap:wrap;gap:3px;margin:3px 0 6px;"></div>
+                    <div style="display:flex;align-items:center;gap:5px;">
+                      <span id="rv-intr-sw-dot" class="led-dot"></span>
+                      <span style="font-size:11px;color:var(--muted);">SW_INTR (bit31)</span>
+                    </div>
+                    <div class="row" style="margin-top:6px;">
+                      <button class="small primary" id="rv-intr-raw-read">Read</button>
+                      <button class="small" id="rv-intr-raw-poll">▶ Poll</button>
+                    </div>
                     <div class="reg-status" id="rv-st-intr-raw"></div>
                   </div>
-                  <div class="reg-card" id="rsec-intr-mask">
-                    <div class="reg-card-title">INTERRUPT MASK <small>INTR_MASK</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-intr-mask-off" class="mono" value="0x018" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-intr-mask" class="mono" value="0x00000000"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-intr-mask-off" data-val="rv-intr-mask" data-st="rv-st-intr-mask">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-intr-mask-off" data-val="rv-intr-mask" data-st="rv-st-intr-mask">Write</button>
+                  <!-- INTERRUPT_MASK 0x018 -->
+                  <div class="reg-card" id="rsec-intr-mask" style="grid-column:span 2;">
+                    <div class="reg-card-title">INTERRUPT MASK <small>0x018</small></div>
+                    <div style="font-size:10px;color:var(--muted);margin-top:4px;">PORT mask [15:0]</div>
+                    <div id="rv-intr-port-mask" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:3px 0 6px;"></div>
+                    <div style="font-size:10px;color:var(--muted);">MDIO mask [23:16]</div>
+                    <div id="rv-intr-mdio-mask" style="display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 4px;"></div>
+                    <label class="rv-chk"><input id="rv-intr-sw-mask" type="checkbox"><span>SW INTR mask (bit31)</span></label>
+                    <div class="row" style="margin-top:6px;">
+                      <button class="small primary" id="rv-intr-mask-read">Read</button>
+                      <button class="small" id="rv-intr-mask-apply">Apply</button>
                     </div>
                     <div class="reg-status" id="rv-st-intr-mask"></div>
                   </div>
+                  <!-- SW_INTERRUPT 0x01C -->
                   <div class="reg-card" id="rsec-intr-sw">
-                    <div class="reg-card-title">SW INTERRUPT <small>INTR_SW</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-intr-sw-off" class="mono" value="0x01C" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-intr-sw" class="mono" value="0x00000001"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-intr-sw-off" data-val="rv-intr-sw" data-st="rv-st-intr-sw">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-intr-sw-off" data-val="rv-intr-sw" data-st="rv-st-intr-sw">Write</button>
-                    </div>
+                    <div class="reg-card-title">SW INTERRUPT <small>0x01C</small></div>
+                    <p style="font-size:11px;color:var(--muted);margin:6px 0;">소프트웨어 인터럽트 강제 발생 (0x1 write)</p>
+                    <button class="small danger" id="rv-intr-sw-trigger">SW Trigger</button>
                     <div class="reg-status" id="rv-st-intr-sw"></div>
                   </div>
                 </div>
@@ -492,35 +506,66 @@
               <div id="rsec-timestamp" class="rsec">
                 <div class="rsec-head">TIMESTAMP <button class="small" id="timestampReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
+                  <!-- 현재 시각 + 시간 설정 0x020/0x024/0x028 -->
                   <div class="reg-card" id="rsec-ts-time">
-                    <div class="reg-card-title">현재 시각 <small>TIMESTAMP_NS / SEC_LO</small></div>
-                    <div class="field"><label>NS offset</label><input id="rv-ts-ns-off" class="mono" value="0x020" style="width:90px;"></div>
-                    <div class="field"><label>NS</label><input id="rv-ts-ns" class="mono" readonly placeholder="—"></div>
-                    <div class="row"><button class="small primary" data-rw="read" data-off="rv-ts-ns-off" data-val="rv-ts-ns" data-st="rv-st-ts">Read NS</button></div>
-                    <div class="field" style="margin-top:6px;"><label>SEC_LO offset</label><input id="rv-ts-seclo-off" class="mono" value="0x024" style="width:90px;"></div>
-                    <div class="field"><label>SEC_LO</label><input id="rv-ts-seclo" class="mono" readonly placeholder="—"></div>
-                    <div class="row"><button class="small primary" data-rw="read" data-off="rv-ts-seclo-off" data-val="rv-ts-seclo" data-st="rv-st-ts">Read SEC_LO</button></div>
+                    <div class="reg-card-title">현재 시각 / 시간 설정 <small>0x020 / 0x024 / 0x028</small></div>
+                    <div class="field"><label>현재 시각</label><input id="rv-ts-current" class="mono" readonly placeholder="—" style="flex:1;font-size:11px;"></div>
+                    <div class="row"><button class="small primary" id="rv-ts-read-time">Read Time</button></div>
+                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">시간 설정</div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">
+                      <div class="field"><label style="font-size:10px;">Year</label><input id="rv-ts-year" type="number" value="2025" min="2000" max="2099"></div>
+                      <div class="field"><label style="font-size:10px;">Month</label><input id="rv-ts-month" type="number" value="1" min="1" max="12"></div>
+                      <div class="field"><label style="font-size:10px;">Day</label><input id="rv-ts-day" type="number" value="1" min="1" max="31"></div>
+                      <div class="field"><label style="font-size:10px;">NS</label><input id="rv-ts-set-ns" type="number" value="0" min="0" max="999999999"></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:4px;">
+                      <div class="field"><label style="font-size:10px;">Hour</label><input id="rv-ts-hour" type="number" value="0" min="0" max="23"></div>
+                      <div class="field"><label style="font-size:10px;">Min</label><input id="rv-ts-min" type="number" value="0" min="0" max="59"></div>
+                      <div class="field"><label style="font-size:10px;">Sec</label><input id="rv-ts-sec" type="number" value="0" min="0" max="59"></div>
+                    </div>
+                    <div class="row" style="margin-top:6px;">
+                      <button class="small" id="rv-ts-now">Now</button>
+                      <button class="small primary" id="rv-ts-set-time">Set Time</button>
+                    </div>
                     <div class="reg-status" id="rv-st-ts"></div>
                   </div>
-                  <div class="reg-card" id="rsec-ts-adj">
-                    <div class="reg-card-title">시간 보정 <small>INCDEC_0 / INCDEC_1</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-ts-adj-off" class="mono" value="0x030" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-ts-adj" class="mono" value="0x00000000"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-ts-adj-off" data-val="rv-ts-adj" data-st="rv-st-ts-adj">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-ts-adj-off" data-val="rv-ts-adj" data-st="rv-st-ts-adj">Write</button>
-                    </div>
-                    <div class="reg-status" id="rv-st-ts-adj"></div>
-                  </div>
+                  <!-- 클럭 / PPS 0x02C / 0x030 -->
                   <div class="reg-card" id="rsec-ts-clk">
-                    <div class="reg-card-title">클럭 / PPS 설정 <small>CTRL_0 / CTRL_1</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-ts-clk-off" class="mono" value="0x038" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-ts-clk" class="mono" value="0x00000000"></div>
+                    <div class="reg-card-title">클럭 설정 <small>ADDEND 0x02C / CTRL_1 0x030</small></div>
+                    <div class="field"><label>Clock (MHz)</label><input id="rv-ts-clk-mhz" type="number" value="200" step="0.001" min="0" style="width:90px;"></div>
                     <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-ts-clk-off" data-val="rv-ts-clk" data-st="rv-st-ts-clk">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-ts-clk-off" data-val="rv-ts-clk" data-st="rv-st-ts-clk">Write</button>
+                      <button class="small primary" id="rv-ts-read-clock">Read Clock</button>
+                      <button class="small" id="rv-ts-apply-clock">Apply Clock</button>
+                    </div>
+                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">PPS 출력 소스 [17:16]</div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 6px;">
+                      <label class="rv-chk"><input id="rv-ts-pps-dis" type="radio" name="ts-pps-src" value="0"><span>Disable</span></label>
+                      <label class="rv-chk"><input id="rv-ts-pps-int" type="radio" name="ts-pps-src" value="1" checked><span>Internal</span></label>
+                      <label class="rv-chk"><input id="rv-ts-pps-gps" type="radio" name="ts-pps-src" value="2"><span>GPS</span></label>
+                    </div>
+                    <div class="field"><label>PPS Width (ms, 0-510)</label><input id="rv-ts-pps-width" type="number" value="100" min="0" max="510" step="2" style="width:80px;"></div>
+                    <div class="row">
+                      <button class="small primary" id="rv-ts-read-pps">Read PPS</button>
+                      <button class="small" id="rv-ts-apply-pps">Apply PPS</button>
                     </div>
                     <div class="reg-status" id="rv-st-ts-clk"></div>
+                  </div>
+                  <!-- 시간 보정 0x034 / 0x038 -->
+                  <div class="reg-card" id="rsec-ts-adj">
+                    <div class="reg-card-title">시간 보정 <small>INCDEC_0 0x034 / INCDEC_1 0x038</small></div>
+                    <div class="field" style="align-items:center;gap:4px;">
+                      <label>NS 보정 (ms)</label>
+                      <input id="rv-ts-ns-adj" type="number" value="0" style="width:70px;">
+                      <button class="small primary" id="rv-ts-ns-inc" style="min-width:28px;">+</button>
+                      <button class="small" id="rv-ts-ns-dec" style="min-width:28px;">−</button>
+                    </div>
+                    <div class="field" style="align-items:center;gap:4px;">
+                      <label>SEC 보정 (초)</label>
+                      <input id="rv-ts-sec-adj" type="number" value="0" style="width:70px;">
+                      <button class="small primary" id="rv-ts-sec-inc" style="min-width:28px;">+</button>
+                      <button class="small" id="rv-ts-sec-dec" style="min-width:28px;">−</button>
+                    </div>
+                    <div class="reg-status" id="rv-st-ts-adj"></div>
                   </div>
                 </div>
               </div>
@@ -529,33 +574,59 @@
               <div id="rsec-ledclock" class="rsec">
                 <div class="rsec-head">LED / CLOCK <button class="small" id="ledclockReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
+                  <!-- LED_OUT 0x060 -->
                   <div class="reg-card" id="rsec-led-ctrl">
-                    <div class="reg-card-title">LED CTRL <small>LED_CTRL</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-led-ctrl-off" class="mono" value="0x040" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-led-ctrl" class="mono" value="0x00000000"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-led-ctrl-off" data-val="rv-led-ctrl" data-st="rv-st-led">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-led-ctrl-off" data-val="rv-led-ctrl" data-st="rv-st-led">Write</button>
+                    <div class="reg-card-title">LED CTRL <small>LED_OUT  0x060</small></div>
+                    <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">FPGA_LED_CTRL [9:8]</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+                      <label class="rv-chk"><input id="rv-led-cpu-gpio"  type="radio" name="led-mode" value="0"><span>CPU GPIO</span></label>
+                      <label class="rv-chk"><input id="rv-led-fpga-auto" type="radio" name="led-mode" value="1" checked><span>FPGA Auto</span></label>
+                      <label class="rv-chk"><input id="rv-led-register"  type="radio" name="led-mode" value="3"><span>Register</span></label>
+                    </div>
+                    <!-- FPGA auto dots (read-only) -->
+                    <div id="rv-led-fpga-dots"></div>
+                    <!-- Register mode checkboxes -->
+                    <div id="rv-led-reg-chks" class="rv-port-grid" style="display:none;"></div>
+                    <!-- CPU GPIO warning -->
+                    <div id="rv-led-cpu-warn" style="display:none;font-size:11px;color:var(--muted);margin:4px 0;">CPU GPIO 모드 — 레지스터 제어 불가</div>
+                    <div class="row" style="margin-top:6px;">
+                      <button class="small primary" id="rv-led-read">Read</button>
+                      <button class="small" id="rv-led-apply-mode">Apply Mode</button>
+                      <button class="small" id="rv-led-apply-reg" style="display:none;">Apply LEDs</button>
                     </div>
                     <div class="reg-status" id="rv-st-led"></div>
                   </div>
+                  <!-- EXT_SW_IN 0x064 -->
                   <div class="reg-card" id="rsec-ext-sw">
-                    <div class="reg-card-title">EXT SWITCH <small>EXT_SW_IN</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-ext-sw-off" class="mono" value="0x044" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-ext-sw" class="mono" value="0x00000000"></div>
+                    <div class="reg-card-title">EXT SWITCH <small>EXT_SW_IN  0x064</small></div>
+                    <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">External switch inputs [5:0] (read-only)</div>
+                    <div id="rv-ext-sw-dots" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;"></div>
                     <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-ext-sw-off" data-val="rv-ext-sw" data-st="rv-st-ext-sw">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-ext-sw-off" data-val="rv-ext-sw" data-st="rv-st-ext-sw">Write</button>
+                      <button class="small primary" id="rv-ext-sw-read">Read</button>
                     </div>
                     <div class="reg-status" id="rv-st-ext-sw"></div>
                   </div>
+                  <!-- CLK COUNT LIMIT 0x068 / 0x06C / 0x0D0 -->
                   <div class="reg-card" id="rsec-clk-limit">
-                    <div class="reg-card-title">CLK COUNT LIMIT <small>CLK_LIMIT</small></div>
-                    <div class="field"><label>Offset</label><input id="rv-clk-limit-off" class="mono" value="0x048" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-clk-limit" class="mono" value="0x00000000"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-clk-limit-off" data-val="rv-clk-limit" data-st="rv-st-clk-limit">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-clk-limit-off" data-val="rv-clk-limit" data-st="rv-st-clk-limit">Write</button>
+                    <div class="reg-card-title">CLK COUNT LIMIT <small>limit = MHz×10⁶/2</small></div>
+                    <div class="field" style="align-items:center;gap:4px;">
+                      <label>SYS CLK (MHz)<small style="color:var(--muted);"> 0x068</small></label>
+                      <input id="rv-clk-sys" type="number" value="200" step="0.001" min="0" style="width:80px;">
+                      <button class="small" id="rv-clk-sys-apply" style="margin-left:2px;">Apply</button>
+                    </div>
+                    <div class="field" style="align-items:center;gap:4px;">
+                      <label>AHB CLK (MHz)<small style="color:var(--muted);"> 0x06C</small></label>
+                      <input id="rv-clk-ahb" type="number" value="100" step="0.001" min="0" style="width:80px;">
+                      <button class="small" id="rv-clk-ahb-apply" style="margin-left:2px;">Apply</button>
+                    </div>
+                    <div class="field" style="align-items:center;gap:4px;">
+                      <label>RGMII0 (MHz)<small style="color:var(--muted);"> 0x0D0</small></label>
+                      <input id="rv-clk-rgmii" type="number" value="125" step="0.001" min="0" style="width:80px;">
+                      <button class="small" id="rv-clk-rgmii-apply" style="margin-left:2px;">Apply</button>
+                    </div>
+                    <div class="row" style="margin-top:4px;">
+                      <button class="small primary" id="rv-clk-read">Read</button>
+                      <button class="small" id="rv-clk-apply-all">Apply All</button>
                     </div>
                     <div class="reg-status" id="rv-st-clk-limit"></div>
                   </div>
@@ -564,16 +635,29 @@
 
               <!-- TEST DATA -->
               <div id="rsec-testdata" class="rsec">
-                <div class="rsec-head">TEST DATA</div>
-                <div class="rsec-grid">
+                <div class="rsec-head">TEST DATA <button class="small" id="testdataReadAll">READ ALL</button> <button class="small" id="testdataWriteAll">WRITE ALL</button></div>
+                <div class="rsec-grid" style="grid-template-columns:1fr;">
                   <div class="reg-card">
-                    <div class="reg-card-title">Test Data Registers</div>
-                    <div class="field"><label>Offset</label><input id="rv-testdata-off" class="mono" value="0x100" style="width:90px;"></div>
-                    <div class="field"><label>Value</label><input id="rv-testdata" class="mono" value="0x00000000"></div>
-                    <div class="row">
-                      <button class="small primary" data-rw="read" data-off="rv-testdata-off" data-val="rv-testdata" data-st="rv-st-testdata">Read</button>
-                      <button class="small" data-rw="write" data-off="rv-testdata-off" data-val="rv-testdata" data-st="rv-st-testdata">Write</button>
-                    </div>
+                    <div class="reg-card-title">TEST_DATA_0 ~ TEST_DATA_7 <small>0x040 – 0x05C</small></div>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">
+                      <thead><tr style="font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);">
+                        <th style="text-align:left;padding:2px 6px;font-weight:600;">Name</th>
+                        <th style="padding:2px 6px;font-weight:600;">Offset</th>
+                        <th style="padding:2px 6px;font-weight:600;">Value</th>
+                        <th style="padding:2px 6px;font-weight:600;"></th>
+                        <th style="padding:2px 6px;font-weight:600;">Status</th>
+                      </tr></thead>
+                      <tbody>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_0</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x040</td><td style="padding:2px 4px;"><input id="rv-td-0" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0">R</button><button class="small" data-rw="write" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-0"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_1</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x044</td><td style="padding:2px 4px;"><input id="rv-td-1" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1">R</button><button class="small" data-rw="write" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-1"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_2</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x048</td><td style="padding:2px 4px;"><input id="rv-td-2" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2">R</button><button class="small" data-rw="write" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-2"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_3</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x04C</td><td style="padding:2px 4px;"><input id="rv-td-3" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3">R</button><button class="small" data-rw="write" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-3"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_4</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x050</td><td style="padding:2px 4px;"><input id="rv-td-4" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4">R</button><button class="small" data-rw="write" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-4"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_5</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x054</td><td style="padding:2px 4px;"><input id="rv-td-5" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5">R</button><button class="small" data-rw="write" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-5"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_6</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x058</td><td style="padding:2px 4px;"><input id="rv-td-6" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6">R</button><button class="small" data-rw="write" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-6"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_7</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x05C</td><td style="padding:2px 4px;"><input id="rv-td-7" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7">R</button><button class="small" data-rw="write" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-7"></span></td></tr>
+                      </tbody>
+                    </table>
                     <div class="reg-status" id="rv-st-testdata"></div>
                   </div>
                 </div>

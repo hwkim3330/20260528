@@ -1,3 +1,4 @@
+/* ── Dark theme — matches C# Styles.xaml ─────────────────────────── */
 :root {
   --bg:          #1E1E2E;
   --surface:     #2A2A3E;
@@ -12,6 +13,7 @@
   --tab-dim:     #8899BB;
   --green:       #22c55e;
   --red:         #ef4444;
+  --terminal-bg: #0A0A12;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -202,7 +204,7 @@ tbody tr.selected { background: var(--sel) !important; }
 /* ── Terminal ─────────────────────────────────────────────────────── */
 .terminal-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .terminal-output {
-  flex: 1; overflow-y: auto; background: #0A0A12; color: var(--hex);
+  flex: 1; overflow-y: auto; background: var(--terminal-bg,#0A0A12); color: var(--hex);
   font-family: Consolas, monospace; font-size: 12px;
   padding: 10px; line-height: 1.6; white-space: pre-wrap;
 }

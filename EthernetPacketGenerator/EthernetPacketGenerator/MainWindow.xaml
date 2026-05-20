@@ -5,7 +5,7 @@
         xmlns:views="clr-namespace:EthernetPacketGenerator.Views"
         Title="Ethernet Packet Generator &amp; TSN Switch Inspector"
         Icon="Assets/app.ico"
-        Width="1680" Height="1000"
+        Width="1920" Height="1000"
         MinWidth="1200" MinHeight="800"
         Background="{StaticResource BackgroundBrush}"
         Foreground="{StaticResource ForegroundBrush}"
@@ -58,13 +58,7 @@
     <DockPanel>
         <StatusBar DockPanel.Dock="Bottom" Height="22">
             <StatusBarItem>
-                <TextBlock Text="{Binding SendVM.StartTime}" FontSize="11"/>
-            </StatusBarItem>
-            <StatusBarItem HorizontalAlignment="Right">
-                <TextBlock FontSize="11">
-                    <Run Text="Packets: "/>
-                    <Run Text="{Binding PacketListVM.Sequence.Count, Mode=OneWay}"/>
-                </TextBlock>
+                <TextBlock Text="{Binding PacketGenSendVM.StartTime}" FontSize="11"/>
             </StatusBarItem>
         </StatusBar>
 
@@ -132,55 +126,55 @@
 
                         <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
 
-                        <!-- PacketList — Send 버튼 없이 패킷 조작만 -->
-                        <views:PacketListView Grid.Row="2" DataContext="{Binding PacketListVM}"
-                                              ShowSendControls="False"/>
+                        <!-- Packet List (이더넷 패킷만, PacketGenSendVM) -->
+                        <views:PacketListView Grid.Row="2"
+                                              DataContext="{Binding PacketListVM}"
+                                              IsEthernetOnly="True"
+                                              ShowSendControls="True"
+                                              SendVM="{Binding DataContext.PacketGenSendVM, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              TcGroups="{Binding DataContext.TestCaseMgrVM.Groups, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              TcSelectedCommand="{Binding DataContext.LoadTcIntoGeneratorCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
                     </Grid>
 
                     <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
 
-                    <Grid Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" MinHeight="200"/>
-                            <RowDefinition Height="5"/>
-                            <RowDefinition Height="298" MinHeight="100"/>
-                        </Grid.RowDefinitions>
-
-                        <views:ProtocolPaletteView Grid.Row="0" x:Name="ProtocolPalette" DataContext="{Binding BlockBuilderVM}"/>
-                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
-                        <views:EventPaletteView Grid.Row="2" DataContext="{Binding PacketListVM}"/>
-                    </Grid>
+                    <views:ProtocolPaletteView Grid.Column="2" x:Name="ProtocolPalette" DataContext="{Binding BlockBuilderVM}"/>
                 </Grid>
             </TabItem>
 
             <TabItem Header="  Scenario Lab  " Style="{StaticResource NavTabItem}">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="520" MinWidth="320"/>
+                        <!-- 왼쪽: 테스트케이스 + 시퀀스 -->
+                        <ColumnDefinition Width="600" MinWidth="400"/>
                         <ColumnDefinition Width="5"/>
+                        <!-- 중간: 패킷 리스트 + SendControl + 터미널 -->
                         <ColumnDefinition Width="*" MinWidth="380"/>
                         <ColumnDefinition Width="5"/>
-                        <ColumnDefinition Width="185" MinWidth="150"/>
+                        <!-- 오른쪽: 이벤트 팔레트 -->
+                        <ColumnDefinition Width="180" MinWidth="150"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Test Cases panel -->
+                    <!-- Test Cases + 시퀀스 (TestCaseManagerView에 내장) -->
                     <views:TestCaseManagerView Grid.Column="0" DataContext="{Binding TestCaseMgrVM}"/>
                     <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
 
-                    <!-- Events palette (right column) -->
-                    <views:EventPaletteView Grid.Column="4" DataContext="{Binding PacketListVM}"/>
-                    <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
-
-                    <!-- Test Sequence + Terminal -->
+                    <!-- 중간: Test Sequence + 터미널 -->
                     <Grid Grid.Column="2">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" MinHeight="200"/>
                             <RowDefinition Height="6"/>
-                            <RowDefinition Height="460" MinHeight="240"/>
+                            <RowDefinition Height="320" MinHeight="180"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Test Sequence list (Send 버튼 포함) -->
-                        <views:PacketListView Grid.Row="0" DataContext="{Binding PacketListVM}"/>
+                        <!-- Test Sequence (전체 시퀀스, ScenarioSendVM — 패킷 제너레이터 탭과 완전 분리) -->
+                        <views:PacketListView Grid.Row="0"
+                                              DataContext="{Binding ScenarioPacketListVM}"
+                                              IsEthernetOnly="False"
+                                              ShowSendControls="True"
+                                              UseSequenceTitle="True"
+                                              SendVM="{Binding DataContext.ScenarioSendVM, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              IsRunningSequence="{Binding DataContext.TestCaseMgrVM.IsRunningSequence, RelativeSource={RelativeSource AncestorType=Window}}"/>
 
                         <!-- GridSplitter handle -->
                         <GridSplitter Grid.Row="1"
@@ -277,11 +271,10 @@
                             </Grid>
                         </Border>
                     </Grid>
-                </Grid>
-            </TabItem>
 
-            <TabItem Header="  Capture Address  " Style="{StaticResource NavTabItem}">
-                <views:NdjsonBridgeView DataContext="{Binding NdjsonBridgeVM}"/>
+                    <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{StaticResource BorderBrush}"/>
+                    <views:EventPaletteView Grid.Column="4" DataContext="{Binding ScenarioPacketListVM}"/>
+                </Grid>
             </TabItem>
 
             <!-- ── Tab 1: Capture (Wireshark-style) ─────────────────── -->
@@ -294,128 +287,18 @@
                 <views:HyperTerminalView DataContext="{Binding HyperTerminalVM}"/>
             </TabItem>
 
-            <!-- ── Tab: Settings ─────────────────────────────────────── -->
+            <!-- ── Tab 3: Settings (placeholder) ────────────────────── -->
             <TabItem Header="  Settings  " Style="{StaticResource NavTabItem}">
-                <ScrollViewer Background="{StaticResource BackgroundBrush}"
-                              VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="32,28,32,28" MaxWidth="560">
-
+                <Border Background="{StaticResource BackgroundBrush}" Padding="24">
+                    <StackPanel>
                         <TextBlock Text="Settings"
                                    Foreground="{StaticResource AccentBrush}"
-                                   FontSize="18" FontWeight="SemiBold" Margin="0,0,0,20"/>
-
-                        <!-- Worker Connection Card -->
-                        <Border Background="{StaticResource SurfaceAltBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1" CornerRadius="4" Padding="18,14" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="Worker Connection"
-                                           Foreground="{StaticResource ForegroundBrush}"
-                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,12"/>
-
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Server URL:"
-                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding SettingsVM.ServerUrl}"
-                                               Foreground="{StaticResource ForegroundBrush}"
-                                               FontFamily="Consolas" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Worker ID:"
-                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding SettingsVM.WorkerId}"
-                                               Foreground="{StaticResource ForegroundBrush}"
-                                               FontFamily="Consolas" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <Grid Margin="0,0,0,14">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Status:"
-                                               Foreground="{StaticResource MutedForeground}" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding SettingsVM.ConnectionStatus}"
-                                               FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="#FF8844"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding SettingsVM.IsConnected}" Value="True">
-                                                        <Setter Property="Foreground" Value="#44CC88"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-
-                                <Button Content="Reconnect" Width="100" HorizontalAlignment="Left"
-                                        Command="{Binding SettingsVM.ReconnectCommand}"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Start Options Card -->
-                        <Border Background="{StaticResource SurfaceAltBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1" CornerRadius="4" Padding="18,14" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="Launch Options"
-                                           Foreground="{StaticResource ForegroundBrush}"
-                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                <TextBlock TextWrapping="Wrap" FontSize="11"
-                                           Foreground="{StaticResource MutedForeground}">
-                                    Server URL and Worker ID are set via command-line arguments or environment variables.
-                                </TextBlock>
-                                <TextBlock Margin="0,8,0,4" FontSize="11"
-                                           Foreground="{StaticResource MutedForeground}">
-                                    <Run Text="--server " Foreground="#88CCFF"/><Run Text="ws://&lt;host&gt;:8080"/>
-                                </TextBlock>
-                                <TextBlock FontSize="11" Foreground="{StaticResource MutedForeground}">
-                                    <Run Text="--worker-id " Foreground="#88CCFF"/><Run Text="local"/>
-                                </TextBlock>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- File Paths Card -->
-                        <Border Background="{StaticResource SurfaceAltBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1" CornerRadius="4" Padding="18,14">
-                            <StackPanel>
-                                <TextBlock Text="Data Files"
-                                           Foreground="{StaticResource ForegroundBrush}"
-                                           FontSize="13" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                <TextBlock TextWrapping="Wrap" FontSize="11"
-                                           Foreground="{StaticResource MutedForeground}">
-                                    Test case sequences are saved as JSON in the application directory.
-                                </TextBlock>
-                                <TextBlock Margin="0,8,0,0" FontSize="11"
-                                           Foreground="{StaticResource MutedForeground}">
-                                    <Run Text="Auto-save: " Foreground="#88CCFF"/>
-                                    <Run Text="test_cases.json"/>
-                                </TextBlock>
-                            </StackPanel>
-                        </Border>
-
+                                   FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <TextBlock Text="Configuration options will appear here in a future update."
+                                   Foreground="{StaticResource MutedForeground}"
+                                   FontSize="12"/>
                     </StackPanel>
-                </ScrollViewer>
+                </Border>
             </TabItem>
 
         </TabControl>

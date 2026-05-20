@@ -10,8 +10,8 @@ public class AutomationViewModel : ViewModelBase
 {
     private readonly PacketFlowMonitorViewModel _pfm;
 
-    public PacketListViewModel      PacketListVM  { get; }
-    public TestCaseManagerViewModel TestCaseMgrVM { get; }
+    public PacketListViewModel      ScenarioPacketListVM { get; }
+    public TestCaseManagerViewModel TestCaseMgrVM        { get; }
 
     // Expose PFM for interface configuration binding in AutomationView
     public PacketFlowMonitorViewModel PfmVM => _pfm;
@@ -54,8 +54,8 @@ public class AutomationViewModel : ViewModelBase
         TestCaseManagerViewModel testCaseMgrVM,
         PacketFlowMonitorViewModel pfm)
     {
-        PacketListVM  = packetListVM;
-        TestCaseMgrVM = testCaseMgrVM;
+        ScenarioPacketListVM = packetListVM;
+        TestCaseMgrVM        = testCaseMgrVM;
         _pfm          = pfm;
 
         _pfm.PropertyChanged += (_, e) =>
@@ -102,13 +102,6 @@ public class AutomationViewModel : ViewModelBase
 
     /// <summary>외부 HTTP API (GET /api/auto/results) 에서 호출 — UI 스레드에서 실행됨.</summary>
     public List<Models.PacketFlowAutoTestRow> GetResultsSnapshot() => AutoTestRows.ToList();
-
-    /// <summary>외부 HTTP API (POST /api/auto/stop) 에서 호출 — UI 스레드에서 실행됨.</summary>
-    public void StopTest()
-    {
-        if (_pfm.StopMonitorCommand.CanExecute(null))
-            _pfm.StopMonitorCommand.Execute(null);
-    }
 
     private async Task RunWithStatusAsync(string testName, Func<Task> action)
     {

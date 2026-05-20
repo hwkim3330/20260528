@@ -30,6 +30,12 @@ public class PacketSendService : IDisposable
             return;
         }
 
+        if (packet == null || packet.Length == 0)
+        {
+            SendError?.Invoke(this, "Packet is empty — add protocol blocks before sending.");
+            return;
+        }
+
         try
         {
             if (device != null && device != _device)

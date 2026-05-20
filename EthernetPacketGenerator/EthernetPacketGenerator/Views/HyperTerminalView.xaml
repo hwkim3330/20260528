@@ -9,12 +9,8 @@
             <!-- 포트 설정 바 -->
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="5"/>
-            <!-- 레지스터 뷰어 (대부분 공간) -->
+            <!-- 컨텐츠 영역 -->
             <RowDefinition Height="*" MinHeight="200"/>
-            <!-- 드래그 핸들 -->
-            <RowDefinition Height="6"/>
-            <!-- 터미널 (하단 고정, 드래그로 크기 조절) -->
-            <RowDefinition Height="220" MinHeight="80"/>
         </Grid.RowDefinitions>
 
         <!-- ── 포트 설정 바 ───────────────────────────────────────────── -->
@@ -22,6 +18,14 @@
                 Background="{StaticResource SurfaceAltBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="3" Padding="8,6">
+            <DockPanel>
+            <!-- 레이아웃 토글 버튼 -->
+            <Button x:Name="HtLayoutToggle"
+                    DockPanel.Dock="Right"
+                    Content="⊞" Width="28" Height="24"
+                    Margin="8,0,0,0" VerticalAlignment="Center"
+                    ToolTip="3분할 레이아웃으로 전환"
+                    Click="HtLayoutToggle_Click"/>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
                 <TextBlock Text="PORT" Foreground="{StaticResource MutedForeground}"
@@ -57,42 +61,58 @@
                            Foreground="{StaticResource MutedForeground}"
                            FontSize="11" VerticalAlignment="Center"/>
             </StackPanel>
+            </DockPanel>
         </Border>
 
-        <!-- ── 레지스터 뷰어 ──────────────────────────────────────────── -->
-        <Border Grid.Row="2"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1" CornerRadius="3"
-                ClipToBounds="True">
-            <views:RegisterViewerView DataContext="{Binding RegisterViewerVM}"/>
-        </Border>
+        <!-- ── 컨텐츠 영역 (레지스터 뷰어 + 터미널) ─────────────────── -->
+        <Grid x:Name="HtContentGrid" Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="HtRegisterRow" Height="*" MinHeight="200"/>
+                <RowDefinition x:Name="HtSplitterRow" Height="6"/>
+                <RowDefinition x:Name="HtTerminalRow" Height="220" MinHeight="80"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="HtRegisterCol" Width="*"/>
+                <ColumnDefinition x:Name="HtSplitterCol" Width="0"/>
+                <ColumnDefinition x:Name="HtTerminalCol" Width="0" MinWidth="0"/>
+            </Grid.ColumnDefinitions>
 
-        <!-- ── GridSplitter (드래그 핸들) ────────────────────────────── -->
-        <GridSplitter Grid.Row="3"
-                      HorizontalAlignment="Stretch"
-                      VerticalAlignment="Stretch"
-                      Background="{StaticResource BorderBrush}"
-                      ResizeDirection="Rows"
-                      ResizeBehavior="PreviousAndNext"
-                      Cursor="SizeNS"
-                      ShowsPreview="False">
-            <!-- 핸들 아이콘 -->
-            <GridSplitter.Template>
-                <ControlTemplate TargetType="GridSplitter">
-                    <Border Background="{StaticResource SurfaceAltBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"
-                            BorderThickness="0,1">
-                        <TextBlock Text="· · · · ·"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{StaticResource BorderBrush}"
-                                   FontSize="9"/>
-                    </Border>
-                </ControlTemplate>
-            </GridSplitter.Template>
-        </GridSplitter>
+            <!-- 레지스터 뷰어 -->
+            <Border x:Name="HtRegisterBorder"
+                    Grid.Row="0" Grid.Column="0"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1" CornerRadius="3"
+                    ClipToBounds="True">
+                <views:RegisterViewerView DataContext="{Binding RegisterViewerVM}"/>
+            </Border>
 
-        <!-- ── 터미널 (하단) ──────────────────────────────────────────── -->
-        <Border Grid.Row="4"
+            <!-- GridSplitter -->
+            <GridSplitter x:Name="HtSplitterHandle"
+                          Grid.Row="1" Grid.Column="0"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}"
+                          ResizeDirection="Rows"
+                          ResizeBehavior="PreviousAndNext"
+                          Cursor="SizeNS"
+                          ShowsPreview="False">
+                <GridSplitter.Template>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Border Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,1">
+                            <TextBlock Text="· · · · ·"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{StaticResource BorderBrush}"
+                                       FontSize="9"/>
+                        </Border>
+                    </ControlTemplate>
+                </GridSplitter.Template>
+            </GridSplitter>
+
+            <!-- 터미널 -->
+            <Border x:Name="HtTerminalBorder"
+                    Grid.Row="2" Grid.Column="0"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1" CornerRadius="3"
@@ -164,6 +184,7 @@
                     </Grid>
                 </Border>
             </Grid>
-        </Border>
+            </Border>
+        </Grid><!-- HtContentGrid -->
     </Grid>
 </UserControl>

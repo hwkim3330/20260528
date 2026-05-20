@@ -41,7 +41,7 @@
             </ItemsControl>
         </DockPanel>
 
-        <!-- ── Options row (주기 / 예상 / Repeat) ── -->
+        <!-- ── Options row (주기 / 예상 / Repeat / Fail 무시) ── -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,2,8,2" Height="28">
             <TextBlock Text="주기 (ms):" VerticalAlignment="Center"
                        Foreground="{StaticResource ForegroundBrush}" Margin="0,0,4,0"/>
@@ -50,7 +50,7 @@
             <TextBlock Text="예상 (ms):" VerticalAlignment="Center"
                        Foreground="{StaticResource ForegroundBrush}" Margin="10,0,4,0"/>
             <TextBlock Text="{Binding EstimatedTimeMs}"
-                       Foreground="#88CCFF" VerticalAlignment="Center" MinWidth="80"/>
+                       Foreground="#88CCFF" VerticalAlignment="Center" MinWidth="60"/>
             <CheckBox Content="Repeat"
                       IsChecked="{Binding RepeatEnabled}"
                       Foreground="{StaticResource ForegroundBrush}"
@@ -74,7 +74,7 @@
                 </Button.Style>
             </Button>
             <Button Content="{Binding SendListLabel}"
-                    Padding="12,5" MinWidth="140"
+                    Padding="12,5" MinWidth="140" Margin="0,0,12,0"
                     Command="{Binding SendListCommand}">
                 <Button.Style>
                     <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -87,6 +87,11 @@
                     </Style>
                 </Button.Style>
             </Button>
+            <CheckBox Content="Fail 무시"
+                      IsChecked="{Binding ContinueOnFail}"
+                      Foreground="#FFAA55"
+                      VerticalAlignment="Center"
+                      ToolTip="체크 시 Verify/FdbWaitFor 실패해도 다음 스텝으로 진행"/>
         </StackPanel>
 
         <!-- ── Status row ── -->
@@ -184,8 +189,7 @@
                     </TextBlock.Style>
                 </TextBlock>
 
-                <TextBlock Text="Packets: " Foreground="{StaticResource MutedForeground}" FontSize="10"/>
-                <TextBlock Text="{Binding SentPackets}" Foreground="{StaticResource ForegroundBrush}" FontSize="10" Margin="0,0,14,0"/>
+
                 <TextBlock Text="Bytes: "   Foreground="{StaticResource MutedForeground}" FontSize="10"/>
                 <TextBlock Text="{Binding SentBytes}"   Foreground="{StaticResource ForegroundBrush}" FontSize="10"/>
             </StackPanel>

@@ -258,9 +258,10 @@ public class CaptureViewModel : ViewModelBase
 
     private void OnPacketArrival(object sender, PacketCapture e)
     {
-        var raw = e.GetPacket();
-        var iface = ResolveInterfaceName(sender as ILiveDevice);
-        var row = ParseRow(raw, iface);
+        var raw   = e.GetPacket();
+        var rxDev = sender as ILiveDevice;
+        var iface = ResolveInterfaceName(rxDev);
+        var row   = ParseRow(raw, iface);
 
         System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
         {

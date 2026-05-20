@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using EthernetPacketGenerator.Commands;
 using EthernetPacketGenerator.Models;
+using EthernetPacketGenerator.Services;
 
 namespace EthernetPacketGenerator.ViewModels;
 
@@ -45,9 +47,90 @@ public class PacketListViewModel : ViewModelBase
     private PacketItem? _selectedPacket;
     private SequenceItem? _selectedSequenceItem;
     private ObservableCollection<InterfaceEntry> _interfaceEntries = new();
+    private string _activeScenarioName = "";
 
-    // Flat sequence: packets + events interleaved
+    public string ActiveScenarioName
+    {
+        get => _activeScenarioName;
+        set
+        {
+            SetProperty(ref _activeScenarioName, value);
+            OnPropertyChanged(nameof(PacketListTitle));
+            OnPropertyChanged(nameof(TestSequenceTitle));
+        }
+    }
+
+    private bool _isScenarioMode;
+    public bool IsScenarioMode
+    {
+        get => _isScenarioMode;
+        set
+        {
+            SetProperty(ref _isScenarioMode, value);
+            OnPropertyChanged(nameof(PacketListTitle));
+            OnPropertyChanged(nameof(TestSequenceTitle));
+        }
+    }
+
+    /// <summary>
+    /// 시나리오 패킷 리스트에서 표시할 예상 시간 레이블.
+    /// 외부(TestCaseManagerViewModel)에서 주입. null이면 SendViewModel.EstimatedTimeMs 사용.
+    /// </summary>
+    private string? _injectedEstimatedTimeMs;
+    public string? InjectedEstimatedTimeMs
+    {
+        get => _injectedEstimatedTimeMs;
+        set
+        {
+            SetProperty(ref _injectedEstimatedTimeMs, value);
+            OnPropertyChanged(nameof(EstimatedLabelText));
+            OnPropertyChanged(nameof(HasInjectedEstimated));
+        }
+    }
+
+    /// <summary>InjectedEstimatedTimeMs가 있으면 true → PacketListView가 바인딩 전환.</summary>
+    public bool HasInjectedEstimated => !string.IsNullOrEmpty(_injectedEstimatedTimeMs);
+
+    /// <summary>표시용 예상 시간 문자열 (주입값 우선).</summary>
+    public string EstimatedLabelText => _injectedEstimatedTimeMs ?? "-";
+
+    /// <summary>
+    /// TestSequence에 TC가 있는지 여부 — PacketListView 레이블 "예상" vs "합산 예상" 전환용.
+    /// 외부에서 주입.
+    /// </summary>
+    private bool _suppressRebuild;   // LoadSequence 중 CollectionChanged → RebuildEthernetSequence 일괄 억제
+    private bool _hasTestSequence;
+    public bool HasTestSequence
+    {
+        get => _hasTestSequence;
+        set => SetProperty(ref _hasTestSequence, value);
+    }
+
+    // PacketGenerator 탭용 (이더넷 전용 뷰)
+    public string PacketListTitle =>
+        _isScenarioMode
+            ? (string.IsNullOrEmpty(_activeScenarioName) ? "Packet List" : $"Packet List - {_activeScenarioName}")
+            : "Packet List";
+
+    // ScenarioLab 탭용 (전체 시퀀스 뷰)
+    public string TestSequenceTitle =>
+        _isScenarioMode
+            ? (string.IsNullOrEmpty(_activeScenarioName) ? "TEST SEQUENCE" : $"TEST SEQUENCE - {_activeScenarioName}")
+            : "TEST SEQUENCE";
+
+    // Flat sequence: packets + events interleaved (full, used by Scenario Lab)
     public ObservableCollection<SequenceItem> Sequence { get; } = new();
+
+    // Ethernet-only view (used by Packet Generator tab)
+    public ObservableCollection<SequenceItem> EthernetSequence { get; } = new();
+
+    // 이더넷 패킷만 기준으로 계산한 예상 전송 시간 (패킷 제너레이터 탭 전용)
+    private string _ethernetEstimatedTimeMs = "-";
+    public string EthernetEstimatedTimeMs
+    {
+        get => _ethernetEstimatedTimeMs;
+        private set => SetProperty(ref _ethernetEstimatedTimeMs, value);
+    }
 
     /// <summary>SendViewModel.InterfaceEntries 참조 — PacketListView의 Interface 드롭다운용</summary>
     public ObservableCollection<InterfaceEntry> InterfaceEntries
@@ -98,17 +181,16 @@ public class PacketListViewModel : ViewModelBase
     public ICommand DuplicatePacketCommand    { get; }
     public ICommand MoveUpCommand             { get; }
     public ICommand MoveDownCommand           { get; }
-    public ICommand AddDelayEventCommand    { get; }
-    public ICommand AddRegWriteCommand      { get; }
-    public ICommand AddRegReadCommand       { get; }
-    public ICommand AddRegWaitForCommand    { get; }
-    public ICommand AddFdbWriteCommand      { get; }
-    public ICommand AddFdbReadCommand       { get; }
-    public ICommand AddFdbWaitForCommand    { get; }
-    public ICommand AddFdbFlushCommand      { get; }
-    public ICommand AddCaptureVerifyCommand { get; }
-    public ICommand AddSerialSendCommand    { get; }
-    public ICommand AddSerialVerifyCommand  { get; }
+    public ICommand AddDelayEventCommand      { get; }
+    public ICommand AddRegWriteCommand        { get; }
+    public ICommand AddRegReadCommand         { get; }
+    public ICommand AddRegVerifyCommand          { get; }
+    public ICommand AddFdbWriteCommand        { get; }
+    public ICommand AddFdbWriteBucketCommand  { get; }
+    public ICommand AddFdbReadCommand         { get; }
+    public ICommand AddFdbReadBucketCommand   { get; }
+    public ICommand AddFdbFlushCommand        { get; }
+    public ICommand AddRxVerifyCommand        { get; }
 
     public PacketListViewModel()
     {
@@ -118,19 +200,23 @@ public class PacketListViewModel : ViewModelBase
         DuplicatePacketCommand    = new RelayCommand(DuplicatePacket,    () => SelectedPacket != null);
         MoveUpCommand          = new RelayCommand(MoveUp,          CanMoveUp);
         MoveDownCommand        = new RelayCommand(MoveDown,        CanMoveDown);
-        AddDelayEventCommand    = new RelayCommand(AddDelayEvent);
-        AddRegWriteCommand      = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegWrite    }));
-        AddRegReadCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegRead     }));
-        AddRegWaitForCommand    = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegWaitFor  }));
-        AddFdbWriteCommand      = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbWrite    }));
-        AddFdbReadCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbRead     }));
-        AddFdbWaitForCommand    = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbWaitFor  }));
-        AddFdbFlushCommand      = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbFlush    }));
-        AddCaptureVerifyCommand = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.CaptureVerify, TimeoutMs = 3000, CaptureExpected = 1 }));
-        AddSerialSendCommand    = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.SerialSend   }));
-        AddSerialVerifyCommand  = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.SerialVerify, TimeoutMs = 5000 }));
+        AddDelayEventCommand     = new RelayCommand(AddDelayEvent);
+        AddRegWriteCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegWrite       }));
+        AddRegReadCommand        = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegRead        }));
+        AddRegVerifyCommand         = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RegVerify         }));
+        AddFdbWriteCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbWrite       }));
+        AddFdbWriteBucketCommand = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbWriteBucket }));
+        AddFdbReadCommand        = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbRead        }));
+        AddFdbReadBucketCommand  = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbReadBucket  }));
+        AddFdbFlushCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.FdbFlush       }));
+        AddRxVerifyCommand       = new RelayCommand(() => InsertEvent(new SequenceEvent { EventType = SequenceEventType.RxVerify,  TimeoutMs = 2000 }));
 
-        Sequence.CollectionChanged += (_, _) => ReIndex();
+        Sequence.CollectionChanged += (_, _) =>
+        {
+            if (_suppressRebuild) return;
+            ReIndex();
+            RebuildEthernetSequence();
+        };
 
         AddPacket();
     }
@@ -139,6 +225,37 @@ public class PacketListViewModel : ViewModelBase
     {
         for (int i = 0; i < Sequence.Count; i++)
             Sequence[i].Index = i;
+    }
+
+    private void RebuildEthernetSequence()
+    {
+        // Unsubscribe old packet change listeners
+        foreach (var item in EthernetSequence)
+            if (item.Packet != null) item.Packet.PropertyChanged -= OnEthernetPacketChanged;
+
+        EthernetSequence.Clear();
+        foreach (var item in Sequence.Where(s => s.Kind == SequenceItemKind.Packet))
+        {
+            EthernetSequence.Add(item);
+            if (item.Packet != null)
+                item.Packet.PropertyChanged += OnEthernetPacketChanged;
+        }
+        RecalcEthernetEstimatedTime();
+    }
+
+    private void OnEthernetPacketChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PacketItem.TotalLength))
+            RecalcEthernetEstimatedTime();
+    }
+
+    private void RecalcEthernetEstimatedTime()
+    {
+        if (EthernetSequence.Count == 0) { EthernetEstimatedTimeMs = "-"; return; }
+        double totalMs = EthernetSequence
+            .Where(s => s.Packet != null)
+            .Sum(s => EthernetTiming.WireTimeMs(s.Packet!.TotalLength));
+        EthernetEstimatedTimeMs = $"{totalMs:F3} ms";
     }
 
     public void AddPacket()
@@ -231,28 +348,21 @@ public class PacketListViewModel : ViewModelBase
 
     public void LoadSequence(IEnumerable<SequenceItem> items)
     {
-        Sequence.Clear();
-        foreach (var item in items)
-            Sequence.Add(item);
+        // 리빌드 억제: Clear + Add × N 반복으로 EthernetSequence가 N+1번 초기화되는 것을 방지
+        _suppressRebuild = true;
+        try
+        {
+            Sequence.Clear();
+            foreach (var item in items)
+                Sequence.Add(item);
+        }
+        finally
+        {
+            _suppressRebuild = false;
+        }
+        // 전체 로드 완료 후 한 번만 재인덱스 + 리빌드
+        ReIndex();
+        RebuildEthernetSequence();
         SelectedSequenceItem = Sequence.FirstOrDefault(s => s.Kind == SequenceItemKind.Packet);
-    }
-
-    public void AddEventForApi(SequenceEvent ev)
-    {
-        var item = new SequenceItem(ev);
-        Sequence.Add(item);
-        SelectedSequenceItem = item;
-    }
-
-    public void RemoveEventForApi(int index)
-    {
-        if (index >= 0 && index < Sequence.Count)
-            Sequence.RemoveAt(index);
-    }
-
-    public void ClearEventsForApi()
-    {
-        var toRemove = Sequence.Where(s => s.Kind == SequenceItemKind.Event).ToList();
-        foreach (var item in toRemove) Sequence.Remove(item);
     }
 }

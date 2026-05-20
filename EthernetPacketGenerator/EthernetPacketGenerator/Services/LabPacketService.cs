@@ -17,7 +17,6 @@ public static class LabPacketService
         {
             "udp"  => EthHdr(profile, 0x0800).Add(IPv4(profile, 17, Udp(profile, sequence))),
             "icmp" => EthHdr(profile, 0x0800).Add(IPv4(profile, 1,  Icmp(profile, sequence))),
-            "tcp"  => EthHdr(profile, 0x0800).Add(IPv4(profile, 6,  Tcp(profile, sequence))),
             "arp"  => EthHdr(profile, 0x0806).Add(Arp(profile)),
             "raw"  => EthHdr(profile, ParseHex(profile["etherType"]?.GetValue<string>() ?? "0x88b5"))
                           .Add(PayloadBytes(profile, sequence)),
@@ -84,37 +83,6 @@ public static class LabPacketService
         var cs = Checksum(pseudo.Add(hdr).Add(data));
         if (cs == 0) cs = 0xFFFF;
         hdr[6] = (byte)(cs >> 8); hdr[7] = (byte)cs;
-        return hdr.Add(data);
-    }
-
-    private static byte[] Tcp(JsonObject p, int? seq)
-    {
-        var t      = p["tcp"] as JsonObject ?? new JsonObject();
-        var data   = PayloadBytes(p, seq);
-        var sp     = (ushort)(t["srcPort"]?.GetValue<int>() ?? 40000);
-        var dp     = (ushort)(t["dstPort"]?.GetValue<int>() ?? 50000);
-        var seqNum = (uint)(t["seq"]?.GetValue<long>() ?? 0);
-        var ackNum = (uint)(t["ack"]?.GetValue<long>() ?? 0);
-        var flags  = (byte)(t["flags"]?.GetValue<int>() ?? (data.Length > 0 ? 0x18 : 0x02));
-        var win    = (ushort)(t["window"]?.GetValue<int>() ?? 65535);
-
-        var hdr = new byte[20];
-        U16(sp).CopyTo(hdr, 0);
-        U16(dp).CopyTo(hdr, 2);
-        U32(seqNum).CopyTo(hdr, 4);
-        U32(ackNum).CopyTo(hdr, 8);
-        hdr[12] = 0x50; // data offset = 5 (20 bytes)
-        hdr[13] = flags;
-        U16(win).CopyTo(hdr, 14);
-
-        var ip     = p["ipv4"] as JsonObject ?? new JsonObject();
-        var tcpLen = (ushort)(20 + data.Length);
-        var pseudo = IpBytes(ip["src"]!.GetValue<string>())
-            .Add(IpBytes(ip["dst"]!.GetValue<string>()))
-            .Add(new byte[] { 0, 6 })
-            .Add(U16(tcpLen));
-        var cs = Checksum(pseudo.Add(hdr).Add(data));
-        hdr[16] = (byte)(cs >> 8); hdr[17] = (byte)cs;
         return hdr.Add(data);
     }
 
@@ -251,19 +219,6 @@ public static class LabPacketService
                         d["benchmark"] = new JsonObject { ["seq"] = sq, ["txTimestampNs"] = (long)ts };
                     }
                 }
-            }
-            else if (proto == 6 && f.Length >= l4 + 20)
-            {
-                d["tcp"] = new JsonObject
-                {
-                    ["srcPort"]  = (f[l4]   << 8) | f[l4+1],
-                    ["dstPort"]  = (f[l4+2] << 8) | f[l4+3],
-                    ["seq"]      = (long)(((uint)f[l4+4]<<24)|((uint)f[l4+5]<<16)|((uint)f[l4+6]<<8)|f[l4+7]),
-                    ["ack"]      = (long)(((uint)f[l4+8]<<24)|((uint)f[l4+9]<<16)|((uint)f[l4+10]<<8)|f[l4+11]),
-                    ["flags"]    = f[l4+13],
-                    ["window"]   = (f[l4+14] << 8) | f[l4+15],
-                    ["checksum"] = $"0x{(f[l4+16]<<8|f[l4+17]):x4}"
-                };
             }
             else if (proto == 1 && f.Length >= l4 + 8)
             {

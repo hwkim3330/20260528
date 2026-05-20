@@ -9,6 +9,10 @@ public class TestCaseEntry : INotifyPropertyChanged
 {
     private string _name       = "TC";
     private bool   _isSelected = false;
+    private bool   _isChecked  = false;
+    private bool   _isRunning  = false;
+    private bool   _isDone     = false;
+    private bool   _isFailed   = false;
 
     public string Name
     {
@@ -22,10 +26,38 @@ public class TestCaseEntry : INotifyPropertyChanged
         set { _isSelected = value; OnPropertyChanged(); }
     }
 
-    public List<SequenceItemDto> Items { get; set; } = new();
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set { _isChecked = value; OnPropertyChanged(); }
+    }
 
-    [JsonPropertyName("scenarioSteps")]
-    public List<TestScenarioStep> ScenarioSteps { get; set; } = new();
+    public bool IsRunning
+    {
+        get => _isRunning;
+        set { _isRunning = value; OnPropertyChanged(); }
+    }
+
+    public bool IsDone
+    {
+        get => _isDone;
+        set { _isDone = value; OnPropertyChanged(); }
+    }
+
+    public bool IsFailed
+    {
+        get => _isFailed;
+        set { _isFailed = value; OnPropertyChanged(); }
+    }
+
+    public int TestScenarioId { get; set; }
+    public int TcId           { get; set; }
+
+    /// <summary>마지막 실행 결과 캐시 (인덱스 순서, JSON 직렬화 제외)</summary>
+    [JsonIgnore]
+    public PacketTestResult[]? LastRunResults { get; set; }
+
+    public List<SequenceItemDto> Items { get; set; } = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? n = null)
@@ -43,6 +75,7 @@ public class SequenceItemDto
 
     // Event — common
     [JsonPropertyName("eventType")]  public string? EventType  { get; set; }
+    [JsonPropertyName("eventLabel")] public string? EventLabel { get; set; }
     [JsonPropertyName("delayMs")]    public int     DelayMs    { get; set; }
 
     // Reg*
@@ -60,14 +93,12 @@ public class SequenceItemDto
     [JsonPropertyName("bucket")]     public int    Bucket     { get; set; }
     [JsonPropertyName("slotBitmap")] public int    SlotBitmap { get; set; } = 1;
 
-    // CaptureVerify
-    [JsonPropertyName("captureInterface")] public string CaptureInterface { get; set; } = "";
-    [JsonPropertyName("captureFilter")]    public string CaptureFilter    { get; set; } = "";
-    [JsonPropertyName("captureExpected")]  public int    CaptureExpected  { get; set; } = 1;
+    // FdbReadBucket verify
+    [JsonPropertyName("fdbExpectedMac")] public string FdbExpectedMac { get; set; } = string.Empty;
 
-    // SerialSend / SerialVerify
-    [JsonPropertyName("serialText")] public string SerialText { get; set; } = "";
-    [JsonPropertyName("serialHex")]  public string SerialHex  { get; set; } = "";
+    // RxVerify
+    [JsonPropertyName("expectedDstMac")] public string ExpectedDstMac { get; set; } = string.Empty;
+    [JsonPropertyName("expectedPort")]   public int    ExpectedPort   { get; set; } = -1;
 
     public class BlockDto
     {

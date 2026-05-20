@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -9,6 +11,14 @@ using EthernetPacketGenerator.Models;
 using EthernetPacketGenerator.Services;
 
 namespace EthernetPacketGenerator.ViewModels.RegisterViewer;
+
+// ── 포트-MAC 매핑 항목 ────────────────────────────────────────────────────────
+public class PortMacEntry
+{
+    public int    PortIndex  { get; init; }
+    public string Mac        { get; init; } = string.Empty;
+    public string Display    => $"Port {PortIndex}  ({Mac})";
+}
 
 // ── 테이블 한 행 ─────────────────────────────────────────────────────────────
 public class FdbResultRow : INotifyPropertyChanged
@@ -47,6 +57,39 @@ public class FdbViewModel : ViewModelBase
     public string AgePeriodNs    { get => _agePeriodNs;    set => SetProperty(ref _agePeriodNs,    value); }
     public string AgingThrVal    { get => _agingThrVal;    set => SetProperty(ref _agingThrVal,    value); }
     public string ControlStatus  { get => _controlStatus;  set => SetProperty(ref _controlStatus,  value); }
+
+    // ── 포트-MAC 매핑 테이블 ──────────────────────────────────────────────
+    private static readonly IReadOnlyDictionary<int, string> PortMacMap =
+        new Dictionary<int, string>
+        {
+            { 0, "9C:6B:00:49:3A:32" },
+            { 1, "C8:4D:44:25:2D:37" },
+            { 2, "A0:36:9F:A8:E4:A7" },
+            { 3, "A0:36:9F:A8:E4:A5" },
+            { 4, "A0:36:9F:A8:E4:A4" },
+            { 5, "A0:36:9F:A8:E4:A6" },
+        };
+
+    public ObservableCollection<PortMacEntry> PortList { get; } =
+        new(Enumerable.Range(0, 6).Select(i => new PortMacEntry
+        {
+            PortIndex = i,
+            Mac       = PortMacMap.TryGetValue(i, out var m) ? m : "—"
+        }));
+
+    private PortMacEntry? _selectedPort;
+    public PortMacEntry? SelectedPort
+    {
+        get => _selectedPort;
+        set
+        {
+            if (SetProperty(ref _selectedPort, value) && value is not null)
+            {
+                MacInput  = value.Mac;
+                PortInput = value.PortIndex.ToString();
+            }
+        }
+    }
 
     // ── Command Input ─────────────────────────────────────────────────────
     private string _macInput    = "00:00:00:00:00:00";

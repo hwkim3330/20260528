@@ -38,25 +38,24 @@ public static class TestCaseSerializer
                 var ev = item.Event;
                 dtos.Add(new SequenceItemDto
                 {
-                    Kind       = "Event",
-                    EventType  = ev.EventType.ToString(),
-                    DelayMs    = ev.DelayMs,
-                    Address    = $"0x{ev.Address:X8}",
-                    Value      = $"0x{ev.Value:X8}",
-                    Mask       = $"0x{ev.Mask:X8}",
-                    Expected   = $"0x{ev.Expected:X8}",
-                    TimeoutMs  = ev.TimeoutMs,
-                    MacAddress = ev.MacAddress,
-                    VlanValid  = ev.VlanValid,
-                    VlanId     = ev.VlanId,
-                    Port       = ev.Port,
-                    Bucket            = ev.Bucket,
-                    SlotBitmap        = ev.SlotBitmap,
-                    CaptureInterface  = ev.CaptureInterface,
-                    CaptureFilter     = ev.CaptureFilter,
-                    CaptureExpected   = ev.CaptureExpected,
-                    SerialText        = ev.SerialText,
-                    SerialHex         = ev.SerialHex
+                    Kind           = "Event",
+                    EventType      = ev.EventType.ToString(),
+                    EventLabel     = string.IsNullOrWhiteSpace(ev.Label) ? null : ev.Label,
+                    DelayMs        = ev.DelayMs,
+                    Address        = $"0x{ev.Address:X8}",
+                    Value          = $"0x{ev.Value:X8}",
+                    Mask           = $"0x{ev.Mask:X8}",
+                    Expected       = $"0x{ev.Expected:X8}",
+                    TimeoutMs      = ev.TimeoutMs,
+                    MacAddress     = ev.MacAddress,
+                    VlanValid      = ev.VlanValid,
+                    VlanId         = ev.VlanId,
+                    Port           = ev.Port,
+                    Bucket         = ev.Bucket,
+                    SlotBitmap     = ev.SlotBitmap,
+                    FdbExpectedMac = ev.FdbExpectedMac,
+                    ExpectedDstMac = ev.ExpectedDstMac,
+                    ExpectedPort   = ev.ExpectedPort
                 });
             }
         }
@@ -86,27 +85,31 @@ public static class TestCaseSerializer
             }
             else if (dto.Kind == "Event")
             {
-                if (!Enum.TryParse<SequenceEventType>(dto.EventType ?? "", out var evType)) continue;
+                // backwards compat: "RegWaitFor" / "Verify" in old .tcs files → RegVerify
+                var evTypeStr = (dto.EventType ?? "")
+                    .Replace("RegWaitFor", "RegVerify")
+                    .Replace("\"Verify\"", "RegVerify");
+                if (evTypeStr == "Verify") evTypeStr = "RegVerify";
+                if (!Enum.TryParse<SequenceEventType>(evTypeStr, out var evType)) continue;
                 var ev = new SequenceEvent
                 {
-                    EventType  = evType,
-                    DelayMs    = dto.DelayMs,
-                    Address    = ParseHex(dto.Address),
-                    Value      = ParseHex(dto.Value),
-                    Mask       = ParseHex(dto.Mask),
-                    Expected   = ParseHex(dto.Expected),
-                    TimeoutMs  = dto.TimeoutMs,
-                    MacAddress = dto.MacAddress,
-                    VlanValid  = dto.VlanValid,
-                    VlanId     = dto.VlanId,
-                    Port       = dto.Port,
-                    Bucket            = dto.Bucket,
-                    SlotBitmap        = dto.SlotBitmap,
-                    CaptureInterface  = dto.CaptureInterface ?? "",
-                    CaptureFilter     = dto.CaptureFilter    ?? "",
-                    CaptureExpected   = dto.CaptureExpected,
-                    SerialText        = dto.SerialText        ?? "",
-                    SerialHex         = dto.SerialHex         ?? ""
+                    EventType      = evType,
+                    Label          = dto.EventLabel ?? string.Empty,
+                    DelayMs        = dto.DelayMs,
+                    Address        = ParseHex(dto.Address),
+                    Value          = ParseHex(dto.Value),
+                    Mask           = ParseHex(dto.Mask),
+                    Expected       = ParseHex(dto.Expected),
+                    TimeoutMs      = dto.TimeoutMs,
+                    MacAddress     = dto.MacAddress ?? string.Empty,
+                    VlanValid      = dto.VlanValid,
+                    VlanId         = dto.VlanId,
+                    Port           = evType == SequenceEventType.RxVerify ? 0 : dto.Port,
+                    Bucket         = dto.Bucket,
+                    SlotBitmap     = dto.SlotBitmap,
+                    FdbExpectedMac = dto.FdbExpectedMac ?? string.Empty,
+                    ExpectedDstMac = dto.ExpectedDstMac,
+                    ExpectedPort   = dto.ExpectedPort
                 };
                 items.Add(new SequenceItem(ev));
             }
@@ -115,65 +118,147 @@ public static class TestCaseSerializer
     }
 
     // ── File I/O (그룹 컬렉션) ───────────────────────────────────────────────
+    private static string ScenarioDir
+    {
+        get
+        {
+            var exeDir = AppContext.BaseDirectory;
+            var projectDir = Path.GetFullPath(Path.Combine(exeDir, @"..\..\..\"));
+            var sourceDir = Path.Combine(projectDir, "TestScenarios");
+            if (Directory.Exists(sourceDir)) return sourceDir;
+            return Path.Combine(exeDir, "TestScenarios");
+        }
+    }
+
     public static void SaveToFile(IEnumerable<TestCaseGroup> groups, string path)
     {
-        var dtos = groups.Select(g => new GroupFileDto
+        var scenarioDir = ScenarioDir;
+        var dtos = groups.Select(g =>
         {
-            GroupName = g.Name,
-            TestCases = g.TestCases.Select(tc => new TcFileDto
+            // CsvSourcePath에서 TestScenarios/ 기준 상대 경로(서브폴더/파일명)만 저장
+            string? csvRelPath = null;
+            if (g.CsvSourcePath != null)
             {
-                Name  = tc.Name,
-                Items = tc.Items
-            }).ToList()
+                csvRelPath = Path.GetRelativePath(scenarioDir, g.CsvSourcePath);
+                // 같은 폴더에 없으면(다른 드라이브 등) 파일명만
+                if (csvRelPath.StartsWith("..")) csvRelPath = Path.GetFileName(g.CsvSourcePath);
+            }
+
+            // LastModified: CsvSourcePath 대신 그룹의 CsvLastModifiedUtc 사용 (실제 파일 없어도 저장 가능)
+            string? lastModified = null;
+            if (g.CsvLastModifiedUtc != null)
+                lastModified = g.CsvLastModifiedUtc.Value.ToString("o");
+            else if (g.CsvSourcePath != null && File.Exists(g.CsvSourcePath))
+                lastModified = File.GetLastWriteTimeUtc(g.CsvSourcePath).ToString("o");
+
+            return new GroupFileDto
+            {
+                GroupName       = g.Name,
+                CsvFileName     = csvRelPath,
+                CsvLastModified = lastModified,
+                TestCases = g.TestCases.Select(tc => new TcFileDto
+                {
+                    Name           = tc.Name,
+                    TestScenarioId = tc.TestScenarioId,
+                    TcId           = tc.TcId,
+                    Items          = tc.Items
+                }).ToList()
+            };
         }).ToList();
         File.WriteAllText(path, JsonSerializer.Serialize(dtos, Opts));
     }
 
     public static List<TestCaseGroup> LoadFromFile(string path)
     {
+        var scenarioDir = ScenarioDir;
         var dtos = JsonSerializer.Deserialize<List<GroupFileDto>>(File.ReadAllText(path), Opts) ?? new();
         return dtos.Select(dto =>
         {
-            var group = new TestCaseGroup { Name = dto.GroupName };
+            // 상대경로(서브폴더/파일명) → 현재 PC의 TestScenarios/ 기준 절대경로로 복원
+            string? csvPath = null;
+            if (!string.IsNullOrEmpty(dto.CsvFileName))
+            {
+                csvPath = Path.Combine(scenarioDir, dto.CsvFileName);
+            }
+            // 이전 버전 호환: 절대경로가 저장된 경우 파일명만 추출 후 재조합
+            else if (!string.IsNullOrEmpty(dto.CsvSourcePath))
+            {
+                var fn = Path.GetFileName(dto.CsvSourcePath);
+                csvPath = Path.Combine(scenarioDir, fn);
+            }
+
+            var group = new TestCaseGroup
+            {
+                Name          = dto.GroupName,
+                CsvSourcePath = csvPath
+            };
+            if (dto.CsvLastModified != null &&
+                DateTime.TryParse(dto.CsvLastModified, null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+                group.CsvLastModifiedUtc = dt;
             foreach (var tc in dto.TestCases)
-                group.TestCases.Add(new TestCaseEntry { Name = tc.Name, Items = tc.Items });
+                group.TestCases.Add(new TestCaseEntry
+                {
+                    Name           = tc.Name,
+                    TestScenarioId = tc.TestScenarioId,
+                    TcId           = tc.TcId,
+                    Items          = tc.Items
+                });
             return group;
         }).ToList();
     }
 
     // ── CSV Import ───────────────────────────────────────────────────────────
-    // TC.csv  (레지스터 시나리오): TC_ID,Test_Scenario_ID,Index,Name,Address,Value,Mask,Expected,Timeout,...
-    // TC1.csv (이벤트/패킷 시나리오): TC_ID,Test_Scenario_ID,Index,Name,EventType,MAC,VlanValid,VlanID,FrameRef,Timeout,...
-    // TC_Packets.csv (패킷 프레임): TC_ID,FrameRef,Layer,Protocol,Field,Value
+    // TC.csv  (레지스터): TC_ID,Test_Scenario_ID,Index,Name,Address,Value,Mask,Expected,Timeout,...
+    // TC1.csv (이벤트):  TC_ID,Test_Scenario_ID,Index,Name,Action/EventType,Value,Expected,Timeout,...
+    // TC_Fowarding_Static.csv: Test_Scenario_ID,TC_ID,Index,Name,EventType,MAC,Port,...,FrameRef,...
+    // TC_Packets.csv:    Test_Scenario_ID/TC_ID,FrameRef,Layer,Protocol,Field,Value
     //
-    // tcCsvPath     : TC.csv 또는 TC1.csv 경로
-    // packetCsvPath : TC_Packets.csv 경로 (null 가능)
-    // 반환값: TC_ID 별로 그룹화된 TestCaseGroup 리스트
-    public static List<TestCaseGroup> ImportFromCsv(string tcCsvPath, string? packetCsvPath = null)
+    // 반환: CSV 파일명을 이름으로 하는 TestCaseEntry 1개.
+    public static TestCaseEntry? ImportCsvAsEntry(string tcCsvPath, string? packetCsvPath = null)
     {
-        // ── 1. 패킷 프레임 파싱 ─────────────────────────────────────────────
-        // key: (TC_ID, FrameRef)  value: 필드 목록
-        var frameMap = new Dictionary<(int tcId, string frameRef), List<(string layer, string protocol, string field, string value)>>();
+        // ── 1. 패킷 프레임 맵 구성 (키: FrameRef 문자열만 — TC_ID 불일치 무관)
+        var frameMap = new Dictionary<string,
+            List<(string layer, string protocol, string field, string value)>>(
+            StringComparer.OrdinalIgnoreCase);
+
         if (packetCsvPath != null && File.Exists(packetCsvPath))
         {
-            var pLines = File.ReadAllLines(packetCsvPath, System.Text.Encoding.UTF8)
-                             .Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
-            foreach (var line in pLines.Skip(1))
+            var pktLines = File.ReadAllLines(packetCsvPath, System.Text.Encoding.UTF8);
+            // 헤더에서 FrameRef 컬럼 인덱스 찾기
+            // TC_Packets.csv 헤더: TC_ID,FrameRef,Layer,Protocol,Field,Value → frColIdx=1
+            int frColIdx = 1; // 기본값
+            if (pktLines.Length > 0)
+            {
+                var ph = SplitCsv(pktLines[0]).Select(h => h.Trim().ToLowerInvariant()).ToList();
+                // 정확한 이름 우선 검색
+                var exact = ph.FindIndex(h => h == "frameref" || h == "frame_ref" || h == "frame ref");
+                if (exact >= 0)
+                    frColIdx = exact;
+                else
+                {
+                    var fi = ph.FindIndex(h => h.Contains("frame") || h.Contains("ref"));
+                    if (fi >= 0) frColIdx = fi;
+                }
+            }
+            foreach (var line in pktLines.Skip(1))
             {
                 var c = SplitCsv(line);
                 if (c.Count < 6) continue;
-                if (!int.TryParse(c[0].Trim(), out int tcId)) continue;
-                var frameRef = c[1].Trim();
-                var key = (tcId, frameRef);
-                if (!frameMap.ContainsKey(key)) frameMap[key] = new();
-                frameMap[key].Add((c[2].Trim(), c[3].Trim(), c[4].Trim(), c[5].Trim()));
+                var fr = c[frColIdx].Trim();
+                if (string.IsNullOrEmpty(fr) || fr == "-") continue;
+                if (!frameMap.ContainsKey(fr)) frameMap[fr] = new();
+                // Layer=c[frColIdx+1], Protocol=c[frColIdx+2], Field=c[frColIdx+3], Value=c[frColIdx+4]
+                int off = frColIdx + 1;
+                if (off + 3 < c.Count)
+                    frameMap[fr].Add((c[off].Trim(), c[off+1].Trim(), c[off+2].Trim(), c[off+3].Trim()));
             }
         }
 
         // ── 2. TC CSV 파싱 ──────────────────────────────────────────────────
         var tcLines = File.ReadAllLines(tcCsvPath, System.Text.Encoding.UTF8)
                           .Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
-        if (tcLines.Count < 2) return new();
+        if (tcLines.Count < 2) return null;
 
         var headers = SplitCsv(tcLines[0]).Select(h => h.Trim().ToLowerInvariant()).ToList();
 
@@ -193,129 +278,258 @@ public static class TestCaseSerializer
         int iMask      = ColIdx("mask");
         int iExpected  = ColIdx("expected");
         int iTimeout   = ColIdx("timeout");
-        int iEventType = ColIdx("eventtype", "event_type", "event type");
+        int iEventType = ColIdx("eventtype", "event_type", "event type", "action");
         int iMac       = ColIdx("mac");
+        int iPort      = ColIdx("port");
         int iVlanValid = ColIdx("vlanvalid", "vlan_valid", "vlan valid");
         int iVlanId    = ColIdx("vlanid", "vlan_id", "vlan id");
+        int iBucket    = ColIdx("bucket");
+        int iSlotBitmap = ColIdx("slotbitmap", "slot_bitmap", "slot bitmap",
+                                 "slot_bitmask", "slotbitmask", "slot_bit_map",
+                                 "slot_map", "slotmap", "slot");
         int iFrameRef  = ColIdx("frameref", "frame_ref", "frame ref");
         int iTcId      = ColIdx("tc_id");
         int iScenId    = ColIdx("test_scenario_id");
+        int iIndex     = ColIdx("index");
 
-        // TC_ID → (ScenarioID → 행 목록) 수집
-        var tcDict = new SortedDictionary<int, List<(int scenId, List<string> cols)>>();
-        foreach (var line in tcLines.Skip(1))
-        {
-            var c = SplitCsv(line);
-            if (!int.TryParse(Safe(c, iTcId), out int tcId)) continue;
-            int.TryParse(Safe(c, iScenId), out int scenId);
-            if (!tcDict.ContainsKey(tcId)) tcDict[tcId] = new();
-            tcDict[tcId].Add((scenId, c));
-        }
-
-        // ── 3. TestCaseGroup/Entry 생성 ─────────────────────────────────────
-        // TC_ID별로 하나의 TestCaseEntry 생성 → 하나의 그룹에 담음
-        var group = new TestCaseGroup { Name = Path.GetFileNameWithoutExtension(tcCsvPath), IsExpanded = true };
-
-        foreach (var (tcId, rows) in tcDict)
-        {
-            var items = new List<SequenceItemDto>();
-            foreach (var (_, cols) in rows.OrderBy(r => r.scenId))
+        // ── 3. 전체 행을 (TC_ID, ScenID, Index) 순서로 정렬해 순서대로 처리 ─
+        var rows = tcLines.Skip(1)
+            .Select(l => SplitCsv(l))
+            .Where(c => int.TryParse(Safe(c, iTcId), out _))
+            .Select(c =>
             {
-                var name      = Safe(cols, iName);
-                var timeout   = Safe(cols, iTimeout);
-                var timeoutMs = ParseTimeoutMs(timeout, 1000);
+                int.TryParse(Safe(c, iTcId),   out int tid);
+                int.TryParse(Safe(c, iScenId), out int sid);
+                int.TryParse(Safe(c, iIndex),  out int idx);
+                return (tid, sid, idx, cols: c);
+            })
+            .OrderBy(r => r.tid).ThenBy(r => r.sid).ThenBy(r => r.idx)
+            .ToList();
 
-                // ── 이벤트 시나리오 포맷 (EventType 컬럼 존재) ──────────────
-                if (iEventType >= 0)
-                {
-                    var evStr    = Safe(cols, iEventType).Trim();
-                    var mac      = Safe(cols, iMac).Trim();
-                    var frameRef = Safe(cols, iFrameRef).Trim();
+        var items = new List<SequenceItemDto>();
 
-                    if (evStr.Equals("Packet", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // 패킷 프레임을 TC_Packets.csv에서 재구성
-                        var packet = BuildPacketFromFrame(frameRef, tcId, frameMap, name);
-                        items.Add(new SequenceItemDto
-                        {
-                            Kind       = "Packet",
-                            PacketName = packet.Name,
-                            Blocks     = packet.Blocks.Select(b => new SequenceItemDto.BlockDto
-                            {
-                                Type  = b.Type.ToString(),
-                                Bytes = Convert.ToBase64String(b.Bytes)
-                            }).ToList()
-                        });
-                        continue;
-                    }
+        foreach (var (tcId, _, _, cols) in rows)
+        {
+            var name      = Safe(cols, iName).Trim();
+            var timeoutMs = ParseTimeoutMs(Safe(cols, iTimeout), 1000);
 
-                    if (!Enum.TryParse<SequenceEventType>(evStr, true, out var evType)) continue;
-                    bool.TryParse(Safe(cols, iVlanValid), out bool vlanValid);
-                    int.TryParse(Safe(cols, iVlanId),    out int vlanId);
-
-                    items.Add(new SequenceItemDto
-                    {
-                        Kind       = "Event",
-                        EventType  = evType.ToString(),
-                        DelayMs    = timeoutMs,
-                        MacAddress = string.IsNullOrWhiteSpace(mac) ? "00:00:00:00:00:00" : mac.ToUpperInvariant(),
-                        VlanValid  = vlanValid,
-                        VlanId     = vlanId,
-                        Address    = "0x00000000",
-                        Value      = "0x00000000",
-                        Mask       = "0xFFFFFFFF",
-                        Expected   = "0x00000000",
-                        TimeoutMs  = timeoutMs
-                    });
-                }
-                else
-                {
-                    // ── 레지스터 시나리오 포맷 (Address/Value/Mask/Expected 컬럼) ──
-                    var addr = Safe(cols, iAddr).Trim();
-                    var val  = Safe(cols, iValue).Trim();
-                    var mask = Safe(cols, iMask).Trim();
-                    var exp  = Safe(cols, iExpected).Trim();
-
-                    // 주소가 없는 빈 행은 건너뜀
-                    if (string.IsNullOrWhiteSpace(addr)) continue;
-
-                    // 이벤트 타입 추론: Mask+Expected 있으면 RegWaitFor, Value만 있으면 RegWrite, 아니면 RegRead
-                    SequenceEventType evType;
-                    if (!string.IsNullOrEmpty(mask) && mask != "-" && !string.IsNullOrEmpty(exp) && exp != "-")
-                        evType = SequenceEventType.RegWaitFor;
-                    else if (!string.IsNullOrEmpty(val) && val != "-")
-                        evType = SequenceEventType.RegWrite;
-                    else
-                        evType = SequenceEventType.RegRead;
-
-                    items.Add(new SequenceItemDto
-                    {
-                        Kind      = "Event",
-                        EventType = evType.ToString(),
-                        Address   = addr,
-                        Value     = (val == "-" || string.IsNullOrEmpty(val)) ? "0x00000000" : val,
-                        Mask      = (mask == "-" || string.IsNullOrEmpty(mask)) ? "0xFFFFFFFF" : mask,
-                        Expected  = (exp  == "-" || string.IsNullOrEmpty(exp))  ? "0x00000000" : exp,
-                        TimeoutMs = timeoutMs
-                    });
-                }
+            // ── 이벤트 타입 결정 ─────────────────────────────────────────
+            // Action/EventType 컬럼이 있으면 그 값 사용
+            // 없으면 Address/Value/Mask/Expected 컬럼 패턴으로 추론
+            string evStr;
+            if (iEventType >= 0)
+            {
+                evStr = Safe(cols, iEventType).Trim();
             }
+            else
+            {
+                // 레거시 포맷 (TC.csv): Address+Value+Mask+Expected 패턴으로 추론
+                var addrL = Safe(cols, iAddr).Trim();
+                var valL  = Safe(cols, iValue).Trim();
+                var maskL = Safe(cols, iMask).Trim();
+                var expL  = Safe(cols, iExpected).Trim();
+                bool hasAddr = !string.IsNullOrEmpty(addrL) && addrL != "-";
+                bool hasVal  = !string.IsNullOrEmpty(valL)  && valL  != "-";
+                bool hasMask = !string.IsNullOrEmpty(maskL) && maskL != "-";
+                bool hasExp  = !string.IsNullOrEmpty(expL)  && expL  != "-";
 
-            if (items.Count > 0)
-                group.TestCases.Add(new TestCaseEntry { Name = $"TC{tcId}", Items = items });
+                if (!hasAddr) continue;   // 주소 없으면 빈 행 skip
+
+                if (hasMask && hasExp)
+                    evStr = "RegVerify";
+                else if (hasVal)
+                    evStr = "RegWrite";
+                else
+                    evStr = "RegRead";
+            }
+                var mac      = Safe(cols, iMac).Trim();
+                var frameRef = Safe(cols, iFrameRef).Trim();
+                var portRaw  = Safe(cols, iPort).Trim();
+
+                if (string.IsNullOrEmpty(evStr)) continue;
+
+                // backwards compat: RegWaitFor → Verify
+                if (evStr.Equals("RegWaitFor", StringComparison.OrdinalIgnoreCase))
+                    evStr = "RegVerify";
+
+                // FdbInitialize → FdbFlush として扱う
+                if (evStr.Equals("FdbInitialize", StringComparison.OrdinalIgnoreCase))
+                    evStr = "FdbFlush";
+
+                if (evStr.Equals("Packet", StringComparison.OrdinalIgnoreCase))
+                {
+                    PacketItem packet;
+                    var valueMac = Safe(cols, iValue).Trim();  // TC1.csv: Value 컬럼에 DST MAC
+                    if (!string.IsNullOrEmpty(frameRef) && frameRef != "-" &&
+                        frameMap.ContainsKey(frameRef))
+                    {
+                        // FrameRef 기반 패킷 (TC_Fowarding_Static.csv 포맷)
+                        packet = BuildPacketFromFrame(frameRef, frameMap, name);
+                    }
+                    else if (!string.IsNullOrEmpty(valueMac) && valueMac != "-" &&
+                             valueMac.Contains(':'))
+                    {
+                        // Value 컬럼이 MAC 주소인 경우 직접 생성 (TC1.csv 포맷)
+                        packet = BuildSimplePacket(name, valueMac.ToUpperInvariant());
+                    }
+                    else
+                    {
+                        packet = BuildPacketFromFrame(frameRef, frameMap, name);
+                    }
+                    items.Add(new SequenceItemDto
+                    {
+                        Kind       = "Packet",
+                        PacketName = packet.Name,
+                        Blocks     = packet.Blocks.Select(b => new SequenceItemDto.BlockDto
+                        {
+                            Type  = b.Type.ToString(),
+                            Bytes = Convert.ToBase64String(b.Bytes)
+                        }).ToList()
+                    });
+                    continue;
+                }
+
+                // RxVerify: DA 기반 수신 검증 이벤트
+                // Expected 컬럼 = 수신 기대 MAC (ExpectedDstMac)
+                // Port 컬럼 = 수신 기대 포트 인덱스 (ExpectedPort), 없으면 -1
+                if (evStr.Equals("RxVerify", StringComparison.OrdinalIgnoreCase))
+                {
+                    var rxExpectedMac  = Safe(cols, iExpected).Trim();
+                    var rxExpectedPort = -1;
+                    if (!string.IsNullOrEmpty(portRaw) && portRaw != "-")
+                        int.TryParse(portRaw, out rxExpectedPort);
+                    items.Add(new SequenceItemDto
+                    {
+                        Kind           = "Event",
+                        EventType      = SequenceEventType.RxVerify.ToString(),
+                        TimeoutMs      = timeoutMs,
+                        ExpectedDstMac = (string.IsNullOrWhiteSpace(rxExpectedMac) || rxExpectedMac == "-")
+                                          ? string.Empty : rxExpectedMac.ToUpperInvariant(),
+                        ExpectedPort   = rxExpectedPort
+                    });
+                    continue;
+                }
+
+                if (!Enum.TryParse<SequenceEventType>(evStr, true, out var evType)) continue;
+                bool.TryParse(Safe(cols, iVlanValid), out bool vlanValid);
+                int.TryParse(Safe(cols, iVlanId), out int vlanId);
+
+                // MAC: MAC 컬럼 우선, 없으면 Value 컬럼 (TC1.csv 포맷)
+                var macRaw = mac;
+                if (string.IsNullOrWhiteSpace(macRaw) || macRaw == "-")
+                    macRaw = Safe(cols, iValue).Trim();
+
+                var addrStr = Safe(cols, iAddr).Trim();
+                var valStr  = Safe(cols, iValue).Trim();
+                var maskStr = Safe(cols, iMask).Trim();
+                var expStr  = Safe(cols, iExpected).Trim();
+
+                // Port: Port 컬럼 우선, 없으면 Expected 컬럼 (TC1.csv 포맷)
+                // FdbReadBucket은 Expected에 MAC이 올 수 있으므로 fallback 금지
+                var portSrc = (!string.IsNullOrEmpty(portRaw) && portRaw != "-")
+                    ? portRaw
+                    : (evType == SequenceEventType.FdbReadBucket ? "" : expStr);
+                int portVal = 0;
+                if (!string.IsNullOrEmpty(portSrc) && portSrc != "-")
+                {
+                    if (portSrc.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+                        // 비트마스크 표기 → 비트마스크 값 그대로 저장 (0b000001=1, 0b100000=32)
+                        portVal = Convert.ToInt32(portSrc[2..], 2);
+                    else
+                        portVal = (int)ParseHexUint(portSrc);
+                }
+
+                // FdbReadBucket: Expected 컬럼 → FdbExpectedMac (비어있으면 순수 읽기)
+                string fdbExpectedMac = string.Empty;
+                if (evType == SequenceEventType.FdbReadBucket &&
+                    !string.IsNullOrWhiteSpace(expStr) && expStr != "-")
+                    fdbExpectedMac = expStr.Trim().Replace("-", ":").ToUpperInvariant();
+
+                // Bucket / SlotBitmap 컬럼
+                int.TryParse(Safe(cols, iBucket), out int bucketVal);
+                int slotBitmapVal = 1;
+                var slotRaw = Safe(cols, iSlotBitmap).Trim();
+                if (!string.IsNullOrEmpty(slotRaw) && slotRaw != "-")
+                    slotBitmapVal = (int)ParseHexUint(slotRaw);
+
+                // MAC 주소: 정규화, 없으면 기본값
+                var macAddr = (string.IsNullOrWhiteSpace(macRaw) || macRaw == "-")
+                    ? "00:00:00:00:00:00"
+                    : macRaw.Trim().Replace("-", ":").ToUpperInvariant();
+
+                // EventLabel: Name 컬럼 (비어 있으면 저장하지 않음)
+                string? eventLabel = string.IsNullOrWhiteSpace(name) ? null : name;
+
+                items.Add(new SequenceItemDto
+                {
+                    Kind           = "Event",
+                    EventType      = evType.ToString(),
+                    EventLabel     = eventLabel,
+                    DelayMs        = timeoutMs,
+                    MacAddress     = macAddr,
+                    Port           = portVal,
+                    VlanValid      = vlanValid,
+                    VlanId         = vlanId,
+                    Bucket         = bucketVal,
+                    SlotBitmap     = slotBitmapVal,
+                    FdbExpectedMac = fdbExpectedMac,
+                    Address        = (string.IsNullOrEmpty(addrStr) || addrStr == "-") ? "0x00000000" : addrStr,
+                    Value          = (string.IsNullOrEmpty(valStr)  || valStr  == "-") ? "0x00000000" : valStr,
+                    Mask           = (string.IsNullOrEmpty(maskStr) || maskStr == "-") ? "0xFFFFFFFF" : maskStr,
+                    Expected       = (string.IsNullOrEmpty(expStr)  || expStr  == "-") ? "0x00000000" : expStr,
+                    TimeoutMs      = timeoutMs
+                });
         }
 
-        return group.TestCases.Count > 0 ? new List<TestCaseGroup> { group } : new();
+        if (items.Count == 0) return null;
+
+        var firstRow = rows.FirstOrDefault();
+        return new TestCaseEntry
+        {
+            Name           = Path.GetFileNameWithoutExtension(tcCsvPath),
+            TestScenarioId = firstRow.sid,
+            TcId           = firstRow.tid,
+            Items          = items
+        };
+    }
+
+    // 하위 호환: 이전 코드에서 List<TestCaseGroup>을 기대하는 호출부를 위한 래퍼
+    public static List<TestCaseGroup> ImportFromCsv(string tcCsvPath, string? packetCsvPath = null)
+    {
+        var entry = ImportCsvAsEntry(tcCsvPath, packetCsvPath);
+        if (entry == null) return new();
+        var group = new TestCaseGroup
+        {
+            Name       = entry.Name,
+            IsExpanded = true
+        };
+        group.TestCases.Add(entry);
+        return new List<TestCaseGroup> { group };
+    }
+
+    private static PacketItem BuildSimplePacket(string name, string dstMac)
+    {
+        var packet = new PacketItem { Name = string.IsNullOrWhiteSpace(name) ? dstMac : name };
+        packet.Blocks.Add(new EthernetBlock
+        {
+            DstMac    = dstMac,
+            SrcMac    = "9C:6B:00:49:3A:32",
+            EtherType = 0x88B5
+        });
+        var raw = new RawPayloadBlock();
+        raw.ImportBytes(System.Text.Encoding.ASCII.GetBytes("KETI-FDB-FORWARDING-TEST"), 0);
+        packet.Blocks.Add(raw);
+        return packet;
     }
 
     private static PacketItem BuildPacketFromFrame(
-        string frameRef, int tcId,
-        Dictionary<(int, string), List<(string layer, string protocol, string field, string value)>> frameMap,
+        string frameRef,
+        Dictionary<string, List<(string layer, string protocol, string field, string value)>> frameMap,
         string name)
     {
         var packet = new PacketItem { Name = string.IsNullOrWhiteSpace(name) ? frameRef : name };
 
-        if (!frameMap.TryGetValue((tcId, frameRef), out var fields) || fields.Count == 0)
+        if (!frameMap.TryGetValue(frameRef, out var fields) || fields.Count == 0)
         {
             // 패킷 정보 없으면 빈 이더넷 프레임
             packet.Blocks.Add(new EthernetBlock());
@@ -339,7 +553,7 @@ public static class TestCaseSerializer
                 else if (fld.Contains("SRC") || fld.Contains("SOURCE"))
                     eth.SrcMac = val;
                 else if (fld.Contains("TYPE"))
-                    eth.EtherType = (ushort)ParseHexUint(val);
+                    eth.EtherType = ParseEtherType(val);
             }
             else if (proto == "RAW" || proto == "PAYLOAD" || proto == "DATA")
             {
@@ -374,6 +588,21 @@ public static class TestCaseSerializer
         return int.TryParse(clean, NumberStyles.Integer, null, out var v) ? v : fallback;
     }
 
+    private static ushort ParseEtherType(string? val)
+    {
+        var s = (val ?? "").Trim();
+        // 이름으로 된 EtherType 처리 (ARP, IPv4, IPv6, ...)
+        return s.ToUpperInvariant() switch
+        {
+            "ARP"  => 0x0806,
+            "IPV4" or "IP" => 0x0800,
+            "IPV6" => 0x86DD,
+            "VLAN" => 0x8100,
+            "LLDP" => 0x88CC,
+            _ => (ushort)ParseHexUint(s)
+        };
+    }
+
     private static uint ParseHexUint(string? s)
     {
         var clean = (s ?? "").Replace("0x", "", StringComparison.OrdinalIgnoreCase).Replace("_", "").Trim();
@@ -404,13 +633,18 @@ public static class TestCaseSerializer
 
     private class GroupFileDto
     {
-        [JsonPropertyName("groupName")] public string GroupName { get; set; } = "";
-        [JsonPropertyName("testCases")] public List<TcFileDto> TestCases { get; set; } = new();
+        [JsonPropertyName("groupName")]       public string  GroupName       { get; set; } = "";
+        [JsonPropertyName("csvFileName")]     public string? CsvFileName     { get; set; }
+        [JsonPropertyName("csvSourcePath")]   public string? CsvSourcePath   { get; set; } // 이전 버전 호환용
+        [JsonPropertyName("csvLastModified")] public string? CsvLastModified { get; set; }
+        [JsonPropertyName("testCases")]       public List<TcFileDto> TestCases { get; set; } = new();
     }
 
     private class TcFileDto
     {
-        [JsonPropertyName("name")]  public string Name  { get; set; } = "";
-        [JsonPropertyName("items")] public List<SequenceItemDto> Items { get; set; } = new();
+        [JsonPropertyName("name")]             public string Name           { get; set; } = "";
+        [JsonPropertyName("testScenarioId")]   public int    TestScenarioId { get; set; }
+        [JsonPropertyName("tcId")]             public int    TcId           { get; set; }
+        [JsonPropertyName("items")]            public List<SequenceItemDto> Items { get; set; } = new();
     }
 }

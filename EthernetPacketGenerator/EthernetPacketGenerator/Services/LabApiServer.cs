@@ -175,7 +175,7 @@ public sealed class LabApiServer : IDisposable
                 }
 
                 // CORS preflight
-                else if (requestLine.StartsWith("OPTIONS", StringComparison.OrdinalIgnoreCase))
+                if (requestLine.StartsWith("OPTIONS", StringComparison.OrdinalIgnoreCase))
                 {
                     var pre = "HTTP/1.1 204 No Content\r\n" +
                               "Access-Control-Allow-Origin: *\r\n" +
@@ -186,7 +186,7 @@ public sealed class LabApiServer : IDisposable
                     return;
                 }
 
-                else if (requestLine.StartsWith("GET /api/interfaces", StringComparison.OrdinalIgnoreCase))
+                if (requestLine.StartsWith("GET /api/interfaces", StringComparison.OrdinalIgnoreCase))
                 {
                     // activeInterfaces: IsActive 체크된 항목의 OS 인터페이스 이름 (MAC 매칭)
                     var activeNames = new JsonArray();
@@ -322,10 +322,6 @@ public sealed class LabApiServer : IDisposable
                 {
                     (responseBody, status) = HandleSerialSend(body);
                 }
-                else if (requestLine.StartsWith("POST /api/serial/break", StringComparison.OrdinalIgnoreCase))
-                {
-                    (responseBody, status) = HandleSerialBreak();
-                }
                 else if (requestLine.StartsWith("POST /api/serial/clear", StringComparison.OrdinalIgnoreCase))
                 {
                     (responseBody, status) = HandleSerialClear();
@@ -389,27 +385,6 @@ public sealed class LabApiServer : IDisposable
                 else if (requestLine.StartsWith("GET /api/sequence/status", StringComparison.OrdinalIgnoreCase))
                 {
                     (responseBody, status) = HandleSequenceStatus();
-                }
-                else if (requestLine.StartsWith("POST /api/sequence/run", StringComparison.OrdinalIgnoreCase))
-                {
-                    (responseBody, status) = HandleSequenceRun();
-                }
-                // ── Peer PC 프록시 ─────────────────────────────────────────────────
-                else if (requestLine.StartsWith("POST /api/peer/url", StringComparison.OrdinalIgnoreCase))
-                {
-                    (responseBody, status) = HandlePeerSetUrl(body);
-                }
-                else if (requestLine.StartsWith("GET /api/peer/url", StringComparison.OrdinalIgnoreCase))
-                {
-                    responseBody = System.Text.Json.JsonSerializer.Serialize(new { ok = true, url = _peerUrl });
-                    status = 200;
-                }
-                else if (urlPath.StartsWith("/api/peer/", StringComparison.OrdinalIgnoreCase))
-                {
-                    // 나머지 /api/peer/** 는 모두 peer PC로 프록시
-                    var peerPath = "/api/" + urlPath["/api/peer/".Length..];
-                    var method = requestLine.Split(' ')[0];
-                    (responseBody, status) = await ProxyToPeerAsync(peerPath, method, body).ConfigureAwait(false);
                 }
                 else
                 {
@@ -1256,18 +1231,6 @@ public sealed class LabApiServer : IDisposable
         }
     }
 
-    private (string body, int status) HandleSerialBreak()
-    {
-        if (HyperTerminalVm == null)
-            return ("{\"ok\":false,\"error\":\"Serial terminal not available\"}", 503);
-        try
-        {
-            System.Windows.Application.Current.Dispatcher.Invoke(() => HyperTerminalVm.SendBreakForApi());
-            return ("{\"ok\":true,\"status\":\"break-sent\"}", 200);
-        }
-        catch (Exception ex) { return ($"{{\"ok\":false,\"error\":{System.Text.Json.JsonSerializer.Serialize(ex.Message)}}}", 400); }
-    }
-
     private (string body, int status) HandleSerialClear()
     {
         if (HyperTerminalVm == null)
@@ -1558,23 +1521,6 @@ public sealed class LabApiServer : IDisposable
         return (System.Text.Json.JsonSerializer.Serialize(payload), 200);
     }
 
-    private (string body, int status) HandleSequenceRun()
-    {
-        if (MainVm == null)
-            return ("{\"ok\":false,\"error\":\"Sequence not available\"}", 503);
-        try
-        {
-            bool started = false;
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-            {
-                started = MainVm.SendVM.RunSequenceForApi();
-            });
-            var statusStr = started ? "started" : "already-running";
-            return (System.Text.Json.JsonSerializer.Serialize(new { ok = true, status = statusStr }), 200);
-        }
-        catch (Exception ex) { return ($"{{\"ok\":false,\"error\":{System.Text.Json.JsonSerializer.Serialize(ex.Message)}}}", 400); }
-    }
-
     private async Task ServeStaticAsync(NetworkStream stream, string urlPath)
     {
         string filePath;
@@ -1628,52 +1574,6 @@ public sealed class LabApiServer : IDisposable
         ".svg"  => "image/svg+xml",
         _       => "application/octet-stream"
     };
-
-    // ── Peer PC 프록시 (두 PC 상호제어) ──────────────────────────────────────
-    private string _peerUrl = string.Empty;
-    private static readonly System.Net.Http.HttpClient _httpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(10)
-    };
-
-    private (string body, int status) HandlePeerSetUrl(string jsonBody)
-    {
-        try
-        {
-            var req = JsonNode.Parse(jsonBody) as JsonObject ?? new JsonObject();
-            var url = req["url"]?.GetValue<string>() ?? string.Empty;
-            _peerUrl = url.TrimEnd('/');
-            return (System.Text.Json.JsonSerializer.Serialize(new { ok = true, url = _peerUrl }), 200);
-        }
-        catch (Exception ex)
-        {
-            return ($"{{\"ok\":false,\"error\":{System.Text.Json.JsonSerializer.Serialize(ex.Message)}}}", 400);
-        }
-    }
-
-    private async Task<(string body, int status)> ProxyToPeerAsync(string peerPath, string method, string body)
-    {
-        if (string.IsNullOrWhiteSpace(_peerUrl))
-            return ("{\"ok\":false,\"error\":\"Peer URL not set. Call POST /api/peer/url first.\"}", 400);
-
-        try
-        {
-            var url = _peerUrl + peerPath;
-            using var req = new System.Net.Http.HttpRequestMessage(
-                new System.Net.Http.HttpMethod(method), url);
-
-            if (method != "GET" && !string.IsNullOrWhiteSpace(body))
-                req.Content = new System.Net.Http.StringContent(body, Encoding.UTF8, "application/json");
-
-            using var resp = await _httpClient.SendAsync(req).ConfigureAwait(false);
-            var respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            return (respBody, (int)resp.StatusCode);
-        }
-        catch (Exception ex)
-        {
-            return ($"{{\"ok\":false,\"error\":{System.Text.Json.JsonSerializer.Serialize(ex.Message)}}}", 502);
-        }
-    }
 
     public void Dispose()
     {

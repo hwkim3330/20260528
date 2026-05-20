@@ -303,7 +303,7 @@
                                    FontSize="10" FontWeight="SemiBold"
                                    Margin="8,4"/>
                     </Border>
-                    <views:PacketListView DataContext="{Binding PacketListVM}"/>
+                    <views:PacketListView DataContext="{Binding ScenarioPacketListVM}"/>
                 </DockPanel>
             </Grid>
 

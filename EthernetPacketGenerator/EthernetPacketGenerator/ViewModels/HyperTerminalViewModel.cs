@@ -215,12 +215,6 @@ public class HyperTerminalViewModel : ViewModelBase
 
     public void ClearForApi() => TerminalOutput = string.Empty;
 
-    public void SendBreakForApi()
-    {
-        if (!IsConnected) throw new InvalidOperationException("Not connected");
-        Task.Run(() => _serial.SendBreak());
-    }
-
     public object GetSnapshot()
     {
         RefreshPorts();

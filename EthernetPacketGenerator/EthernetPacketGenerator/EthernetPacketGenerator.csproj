@@ -11,9 +11,9 @@
     <PlatformTarget>x64</PlatformTarget>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <!-- 빌드 출력 경로를 단일 경로로 고정 -->
-    <BaseOutputPath>bin</BaseOutputPath>
-    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!-- 빌드 출력 경로를 Debug 단일 경로로 고정 -->
+    <OutputPath>bin\Debug\net8.0-windows\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
   <PropertyGroup>
@@ -24,10 +24,12 @@
   <ItemGroup>
     <Resource Include="Assets\app.ico"/>
   </ItemGroup>
+
   <ItemGroup>
     <Content Include="wwwroot\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- TestScenarios는 원천 폴더를 직접 읽으므로 복사 불필요 -->
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SharpPcap" Version="6.3.0" />

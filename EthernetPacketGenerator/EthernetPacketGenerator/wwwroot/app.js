@@ -2,17 +2,16 @@ const $ = (id) => document.getElementById(id);
 
 const state = {
   interfaces: [],
-  senderInterface: '',
+  senderIface: '',
   captureInterfaces: new Set(),
   captureRows: [],
   captureTimer: null,
   serialTimer: null,
-  serialReader: null,
-  streamActive: false,
-  selectedGroupIndex: 0,
-  selectedTestCaseIndex: null,
+  selectedGroupIdx: 0,
+  selectedTcIdx: null,
 };
 
+// ── API helper ────────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
@@ -23,61 +22,59 @@ async function api(path, options = {}) {
   return data;
 }
 
-function toast(message, kind = 'info') {
+function toast(msg, kind = 'info') {
   const tray = $('toastTray');
-  const node = document.createElement('div');
-  node.className = `toast ${kind}`;
-  node.textContent = message;
-  tray.appendChild(node);
-  setTimeout(() => node.remove(), 4200);
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  tray.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 
 function setStatus(text, ok = true) {
   $('status').textContent = text;
   $('serverState').classList.toggle('bad', !ok);
+  $('workerStatus').textContent = ok ? `Worker: connected` : `Worker: offline`;
+  $('workerStatus').className = ok ? 'ok' : 'err';
 }
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+// ── Tab switching ─────────────────────────────────────────────────────────────
 function initTabs() {
-  document.querySelectorAll('.tab').forEach((tab) => {
+  document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-      document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
       tab.classList.add('active');
       $(tab.dataset.view)?.classList.add('active');
     });
   });
 }
 
+// ── Interfaces ────────────────────────────────────────────────────────────────
 async function refreshInterfaces() {
   const data = await api('/api/interfaces');
   state.interfaces = data.interfaces || [];
   renderSenderInterfaces();
   await refreshCaptureStatus();
-  setStatus(`Connected - ${state.interfaces.length} interfaces`);
+  setStatus(`Connected — ${state.interfaces.length} interfaces`);
 }
 
 function renderSenderInterfaces() {
   const wrap = $('senderInterfaces');
+  if (!state.interfaces.length) { wrap.innerHTML = '<p style="color:var(--muted);font-size:10px;">No interfaces found.</p>'; return; }
   wrap.innerHTML = '';
-  if (!state.interfaces.length) {
-    wrap.innerHTML = '<p class="empty">No interfaces found.</p>';
-    return;
-  }
-
   for (const iface of state.interfaces) {
     const btn = document.createElement('button');
-    btn.className = `chip ${iface.state === 'up' ? 'up' : 'down'}`;
-    btn.textContent = `${iface.name} ${iface.state || ''}`;
-    btn.title = `${iface.mac || ''}`;
+    btn.className = `chip ${iface.state === 'up' ? 'up' : ''}`;
+    btn.textContent = `${iface.name}`;
+    btn.title = iface.mac || '';
     btn.addEventListener('click', () => {
-      state.senderInterface = iface.name;
-      document.querySelectorAll('#senderInterfaces .chip').forEach((b) => b.classList.remove('selected'));
+      state.senderIface = iface.name;
+      wrap.querySelectorAll('.chip').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       if (!$('srcMac').value && iface.mac) $('srcMac').value = iface.mac;
       if (!$('srcIp').value && iface.ipv4?.[0]?.local) $('srcIp').value = iface.ipv4[0].local;
@@ -86,29 +83,22 @@ function renderSenderInterfaces() {
   }
 }
 
+// ── Frame Builder ─────────────────────────────────────────────────────────────
 function buildProfile() {
   const profile = {
     protocol: $('protocol').value,
-    interface: state.senderInterface || null,
+    interface: state.senderIface || null,
     dstMac: $('dstMac').value.trim(),
     srcMac: $('srcMac').value.trim(),
     srcIp: $('srcIp').value.trim(),
     dstIp: $('dstIp').value.trim(),
-    udp: {
-      srcPort: Number($('srcPort').value) || 12345,
-      dstPort: Number($('dstPort').value) || 50000,
-    },
+    udp: { srcPort: Number($('srcPort').value) || 12345, dstPort: Number($('dstPort').value) || 50000 },
     count: Number($('count').value) || 1,
     intervalMs: Number($('intervalMs').value) || 0,
     payload: { mode: 'text', data: $('payload').value },
   };
-
   if ($('vlanEnabled').checked) {
-    profile.vlan = {
-      enabled: true,
-      id: Number($('vlanId').value) || 100,
-      priority: Number($('vlanPriority').value) || 0,
-    };
+    profile.vlan = { enabled: true, id: Number($('vlanId').value) || 100, priority: Number($('vlanPriority').value) || 0 };
   }
   return profile;
 }
@@ -116,16 +106,13 @@ function buildProfile() {
 function formatHex(hex) {
   if (!hex) return '';
   const bytes = hex.match(/.{1,2}/g) || [];
-  const out = [];
-  for (let offset = 0; offset < bytes.length; offset += 16) {
-    const chunk = bytes.slice(offset, offset + 16);
-    const ascii = chunk.map((b) => {
-      const n = parseInt(b, 16);
-      return n >= 32 && n <= 126 ? String.fromCharCode(n) : '.';
-    }).join('');
-    out.push(`${offset.toString(16).padStart(4, '0')}  ${chunk.join(' ').padEnd(47, ' ')}  ${ascii}`);
+  const lines = [];
+  for (let off = 0; off < bytes.length; off += 16) {
+    const chunk = bytes.slice(off, off + 16);
+    const ascii = chunk.map(b => { const n = parseInt(b, 16); return n >= 32 && n <= 126 ? String.fromCharCode(n) : '.'; }).join('');
+    lines.push(`${off.toString(16).padStart(4,'0')}  ${chunk.join(' ').padEnd(47)}  ${ascii}`);
   }
-  return out.join('\n');
+  return lines.join('\n');
 }
 
 async function previewFrame() {
@@ -134,17 +121,13 @@ async function previewFrame() {
     const out = data.stdout || data;
     $('decoded').textContent = JSON.stringify(out.decoded || {}, null, 2);
     $('hexdump').textContent = formatHex(out.frameHex);
-    toast('Preview updated', 'ok');
   } catch (err) {
     toast(`Build failed: ${err.message}`, 'bad');
   }
 }
 
 async function sendFrame() {
-  if (!state.senderInterface) {
-    toast('Select a sender interface first', 'warn');
-    return;
-  }
+  if (!state.senderIface) { toast('Select a sender interface first', 'warn'); return; }
   try {
     const data = await api('/api/send', { method: 'POST', body: JSON.stringify(buildProfile()) });
     const out = data.stdout || data;
@@ -154,23 +137,21 @@ async function sendFrame() {
   }
 }
 
+// ── Capture ───────────────────────────────────────────────────────────────────
 async function refreshCaptureStatus() {
   const data = await api('/api/capture/status');
   $('captureRunning').textContent = data.running ? 'capturing' : 'idle';
-  $('captureTotal').textContent = `${data.totalPackets || 0} packets`;
+  $('captureTotal').textContent = `${data.totalPackets || 0} pkts`;
 
   const list = $('captureInterfaces');
   list.innerHTML = '';
-  state.captureInterfaces = new Set((data.interfaces || []).filter((i) => i.selected).map((i) => i.name));
-
+  state.captureInterfaces = new Set((data.interfaces || []).filter(i => i.selected).map(i => i.name));
   for (const iface of data.interfaces || []) {
     const label = document.createElement('label');
     label.className = 'check-row';
-    label.innerHTML = `
-      <input type="checkbox" ${iface.selected ? 'checked' : ''} value="${escapeHtml(iface.name)}">
-      <span><strong>${escapeHtml(iface.name)}</strong><small>${escapeHtml(iface.description || iface.state || '')}</small></span>
-    `;
-    label.querySelector('input').addEventListener('change', (e) => {
+    label.innerHTML = `<input type="checkbox" ${iface.selected ? 'checked' : ''} value="${esc(iface.name)}">
+      <span><strong>${esc(iface.name)}</strong><small>${esc(iface.description || iface.state || '')}</small></span>`;
+    label.querySelector('input').addEventListener('change', e => {
       if (e.target.checked) state.captureInterfaces.add(iface.name);
       else state.captureInterfaces.delete(iface.name);
     });
@@ -180,16 +161,11 @@ async function refreshCaptureStatus() {
 
 async function startCapture() {
   try {
-    await api('/api/capture/start', {
-      method: 'POST',
-      body: JSON.stringify({ interfaces: Array.from(state.captureInterfaces) }),
-    });
+    await api('/api/capture/start', { method: 'POST', body: JSON.stringify({ interfaces: [...state.captureInterfaces] }) });
     toast('Capture started', 'ok');
     startCapturePolling();
     await refreshCaptureStatus();
-  } catch (err) {
-    toast(`Capture start failed: ${err.message}`, 'bad');
-  }
+  } catch (err) { toast(`Capture failed: ${err.message}`, 'bad'); }
 }
 
 async function stopCapture() {
@@ -219,202 +195,149 @@ async function loadCapturePackets() {
     state.captureRows = data.rows || [];
     renderCaptureRows();
     await refreshCaptureStatus();
-  } catch {
-    // keep UI stable if capture is temporarily unavailable
-  }
+  } catch { /* keep UI stable */ }
 }
 
 function rowMatchesFilter(row, filter) {
   if (!filter) return true;
   const text = `${row.no} ${row.time} ${row.interfaceName} ${row.source} ${row.destination} ${row.protocol} ${row.length} ${row.info} ${row.srcMac} ${row.dstMac}`.toLowerCase();
-  return filter.split(/\s+/).filter(Boolean).every((token) => {
-    if (token.startsWith('mac:')) return `${row.srcMac} ${row.dstMac}`.toLowerCase().includes(token.slice(4));
-    if (token.startsWith('ip:')) return `${row.source} ${row.destination}`.toLowerCase().includes(token.slice(3));
-    if (token.startsWith('port:')) return `${row.source} ${row.destination} ${row.info}`.toLowerCase().includes(token.slice(5));
-    return text.includes(token);
+  return filter.split(/\s+/).filter(Boolean).every(tok => {
+    if (tok.startsWith('mac:')) return `${row.srcMac} ${row.dstMac}`.toLowerCase().includes(tok.slice(4));
+    if (tok.startsWith('ip:')) return `${row.source} ${row.destination}`.toLowerCase().includes(tok.slice(3));
+    if (tok.startsWith('port:')) return `${row.source} ${row.destination} ${row.info}`.toLowerCase().includes(tok.slice(5));
+    return text.includes(tok);
   });
 }
 
 function renderCaptureRows() {
   const tbody = $('captureRows');
   const filter = $('captureFilter').value.trim().toLowerCase();
-  const rows = state.captureRows.filter((r) => rowMatchesFilter(r, filter));
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">No packets match.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map((r, idx) => `
-    <tr data-index="${idx}" class="proto-${escapeHtml((r.protocol || '').toLowerCase())}">
-      <td>${r.no}</td>
-      <td>${escapeHtml(r.time)}</td>
-      <td>${escapeHtml(r.interfaceName)}</td>
-      <td>${escapeHtml(r.srcMac)}</td>
-      <td>${escapeHtml(r.dstMac)}</td>
-      <td>${escapeHtml(r.source)}</td>
-      <td>${escapeHtml(r.destination)}</td>
-      <td><strong>${escapeHtml(r.protocol)}</strong></td>
-      <td>${r.length}</td>
-      <td>${escapeHtml(r.info)}</td>
-    </tr>
-  `).join('');
-
-  Array.from(tbody.querySelectorAll('tr')).forEach((tr) => {
+  const rows = state.captureRows.filter(r => rowMatchesFilter(r, filter));
+  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="10" class="empty">No packets match.</td></tr>`; return; }
+  tbody.innerHTML = rows.map((r, i) => `
+    <tr data-idx="${i}" class="proto-${esc((r.protocol||'').toLowerCase())}">
+      <td>${r.no}</td><td>${esc(r.time)}</td><td>${esc(r.interfaceName)}</td>
+      <td>${esc(r.srcMac)}</td><td>${esc(r.dstMac)}</td>
+      <td>${esc(r.source)}</td><td>${esc(r.destination)}</td>
+      <td><strong>${esc(r.protocol)}</strong></td>
+      <td>${r.length}</td><td>${esc(r.info)}</td>
+    </tr>`).join('');
+  tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', () => {
-      tbody.querySelectorAll('tr').forEach((r) => r.classList.remove('selected'));
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
       tr.classList.add('selected');
-      const row = rows[Number(tr.dataset.index)];
+      const row = rows[Number(tr.dataset.idx)];
       $('packetDetails').textContent = row.detailText || 'No decoded detail.';
       $('packetHex').textContent = row.hexDump || '';
     });
   });
 }
 
-async function loadLogs() {
-  try {
-    const data = await api('/api/logs');
-    $('logsBox').textContent = JSON.stringify(data, null, 2);
-  } catch (err) {
-    $('logsBox').textContent = `Log load failed: ${err.message}`;
-  }
-}
-
+// ── Scenario Lab — Test Cases ─────────────────────────────────────────────────
 async function loadTestCases() {
   try {
     const data = await api('/api/testcases/status');
-    const tc = data.snapshot || data.testCases || {};
-    $('tcStatus').textContent = `${tc.status || ''} Selected: ${tc.selected || '(none)'}`;
-    renderTestCaseTree(tc.groups || []);
+    const tc = data.testCases || {};
+    $('scenarioTitle').textContent = `Test Sequence — ${tc.selected || '(none selected)'}`;
+    renderTcTree(tc.groups || []);
     renderSequenceRows(tc.sequence || []);
   } catch (err) {
-    $('tcStatus').textContent = `Test case load failed: ${err.message}`;
+    $('scenarioTitle').textContent = `Test Sequence — load failed: ${err.message}`;
   }
 }
 
-function renderTestCaseTree(groups) {
+function renderTcTree(groups) {
   const root = $('tcTree');
-  if (!groups.length) {
-    root.innerHTML = '<p class="empty">No groups. Add one.</p>';
-    return;
-  }
-  root.innerHTML = groups.map((g) => `
-    <section class="tc-group">
+  if (!groups.length) { root.innerHTML = '<p style="color:var(--muted);font-size:10px;">No groups. Add one above.</p>'; return; }
+  root.innerHTML = groups.map(g => `
+    <div class="tc-group">
       <div class="tc-group-head">
-        <strong>${escapeHtml(g.name)}</strong>
-        <button class="small danger tc-delete-group" data-group="${g.index}">Del</button>
+        <span>${esc(g.name)}</span>
+        <button class="small danger tc-del-group" data-group="${g.index}">Del</button>
       </div>
-      ${(g.testCases || []).map((t) => `
-        <div class="tc-item-row">
-          <button class="tc-item ${t.selected ? 'selected' : ''}" data-group="${t.groupIndex}" data-tc="${t.index}">
-            <span>${escapeHtml(t.name)}</span><small>${t.itemCount} items</small>
-          </button>
-          <button class="small danger tc-delete-tc" data-group="${t.groupIndex}" data-tc="${t.index}" title="Delete TC">&times;</button>
-        </div>
-      `).join('')}
-    </section>
-  `).join('');
-  root.querySelectorAll('.tc-item').forEach((btn) => btn.addEventListener('click', async () => {
-    state.selectedGroupIndex = Number(btn.dataset.group);
-    state.selectedTestCaseIndex = Number(btn.dataset.tc);
-    await api('/api/testcases/select', {
-      method: 'POST',
-      body: JSON.stringify({ groupIndex: state.selectedGroupIndex, testCaseIndex: state.selectedTestCaseIndex }),
-    });
+      ${(g.testCases || []).map(t => `
+        <div class="tc-item ${t.selected ? 'selected' : ''}" data-group="${t.groupIndex}" data-tc="${t.index}">
+          <span>${esc(t.name)}</span><small>${t.itemCount} items</small>
+        </div>`).join('')}
+    </div>`).join('');
+  root.querySelectorAll('.tc-item').forEach(el => el.addEventListener('click', async () => {
+    state.selectedGroupIdx = Number(el.dataset.group);
+    state.selectedTcIdx = Number(el.dataset.tc);
+    await api('/api/testcases/select', { method: 'POST', body: JSON.stringify({ groupIndex: state.selectedGroupIdx, testCaseIndex: state.selectedTcIdx }) });
     await loadTestCases();
   }));
-  root.querySelectorAll('.tc-delete-group').forEach((btn) => btn.addEventListener('click', async () => {
+  root.querySelectorAll('.tc-del-group').forEach(btn => btn.addEventListener('click', async () => {
     if (!confirm('Delete this group?')) return;
     await api('/api/testcases/delete', { method: 'POST', body: JSON.stringify({ groupIndex: Number(btn.dataset.group) }) });
-    await loadTestCases();
-  }));
-  root.querySelectorAll('.tc-delete-tc').forEach((btn) => btn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!confirm('Delete this test case?')) return;
-    await api('/api/testcases/delete', {
-      method: 'POST',
-      body: JSON.stringify({ groupIndex: Number(btn.dataset.group), testCaseIndex: Number(btn.dataset.tc) }),
-    });
     await loadTestCases();
   }));
 }
 
 function renderSequenceRows(items) {
   const tbody = $('sequenceRows');
-  if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No sequence loaded.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = items.map((item, i) => {
-    const isEvent = item.kind === 'Event';
-    const name = isEvent ? (item.eventType || '') : (item.packetName || '');
-    const addr = isEvent ? (item.address || '') : '';
-    const val  = isEvent ? (item.value  || '') : '';
-    const mask = isEvent ? (item.mask   || '') : '';
-    const timing = isEvent
-      ? (item.delayMs ? `delay:${item.delayMs}ms` : item.timeoutMs ? `timeout:${item.timeoutMs}ms` : '')
-      : `${(item.blocks || []).length} blocks`;
-    return `<tr>
+  if (!items.length) { tbody.innerHTML = `<tr><td colspan="8" class="empty">No sequence loaded.</td></tr>`; return; }
+  tbody.innerHTML = items.map((item, i) => `
+    <tr>
       <td>${i}</td>
-      <td>${escapeHtml(item.kind)}</td>
-      <td>${item.checked ? '&#10003;' : ''}</td>
-      <td><strong>${escapeHtml(name)}</strong></td>
-      <td><code>${escapeHtml(addr)}</code></td>
-      <td><code>${escapeHtml(val)}</code></td>
-      <td><code>${escapeHtml(mask)}</code></td>
-      <td>${escapeHtml(timing)}</td>
-    </tr>`;
-  }).join('');
+      <td>${esc(item.kind)}</td>
+      <td>${item.checked ? '✓' : ''}</td>
+      <td>${esc(item.packetName || item.eventType || '')}</td>
+      <td colspan="4" style="color:var(--muted);">${esc(item.eventType ? JSON.stringify(item.params || {}) : `${(item.blocks || []).length} block(s)`)}</td>
+    </tr>`).join('');
 }
 
-async function addTestCaseGroup() {
-  await api('/api/testcases/add-group', { method: 'POST', body: JSON.stringify({ name: $('tcGroupName').value }) });
+async function addTcGroup() {
+  const name = $('tcGroupName').value.trim();
+  if (!name) return;
+  await api('/api/testcases/add-group', { method: 'POST', body: JSON.stringify({ name }) });
   $('tcGroupName').value = '';
   await loadTestCases();
 }
 
-async function addTestCaseFromCurrent() {
-  await api('/api/testcases/add', {
-    method: 'POST',
-    body: JSON.stringify({ groupIndex: state.selectedGroupIndex || 0, name: $('tcName').value }),
-  });
+async function addTcFromCurrent() {
+  const name = $('tcName').value.trim();
+  if (!name) { toast('Enter TC name', 'warn'); return; }
+  await api('/api/testcases/add', { method: 'POST', body: JSON.stringify({ groupIndex: state.selectedGroupIdx || 0, name }) });
   $('tcName').value = '';
   await loadTestCases();
 }
 
-async function saveCurrentToSelected() {
+async function saveTcCurrent() {
   try {
     await api('/api/testcases/save-current', { method: 'POST', body: '{}' });
-    toast('Current sequence saved to selected test case', 'ok');
+    toast('Saved to selected test case', 'ok');
     await loadTestCases();
-  } catch (err) {
-    toast(`Save failed: ${err.message}`, 'bad');
-  }
+  } catch (err) { toast(`Save failed: ${err.message}`, 'bad'); }
 }
 
-async function runSequence() {
+// ── Scenario Terminal ─────────────────────────────────────────────────────────
+function appendSeqTerm(text) {
+  const el = $('seqTermOutput');
+  el.textContent += text + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function seqTermSend() {
+  const text = $('seqTermInput').value.trim();
+  if (!text) return;
   try {
-    const data = await api('/api/sequence/run', { method: 'POST', body: '{}' });
-    toast(data.status === 'already-running' ? 'Sequence already running' : 'Sequence started', 'ok');
-  } catch (err) {
-    toast(`Run failed: ${err.message}`, 'bad');
-  }
+    await api('/api/serial/send', { method: 'POST', body: JSON.stringify({ text }) });
+    appendSeqTerm(`> ${text}`);
+    $('seqTermInput').value = '';
+  } catch (err) { toast(`Send failed: ${err.message}`, 'bad'); }
 }
 
-async function refreshRegisterStatus() {
+// ── Register ──────────────────────────────────────────────────────────────────
+async function refreshRegStatus() {
   try {
     const data = await api('/api/register/status');
-    $('regStatus').textContent = `${data.serialConnected ? 'Serial connected' : 'Serial disconnected'} - base ${data.baseAddress || ''}`;
-  } catch (err) {
-    $('regStatus').textContent = `Register bridge offline: ${err.message}`;
-  }
+    $('regStatus').textContent = `${data.serialConnected ? '● connected' : '○ disconnected'} — base ${data.baseAddress || '0x0'}`;
+  } catch { $('regStatus').textContent = 'offline'; }
 }
 
 async function readRegister() {
   try {
-    const data = await api('/api/register/read', {
-      method: 'POST',
-      body: JSON.stringify({ offset: $('regOffset').value }),
-    });
+    const data = await api('/api/register/read', { method: 'POST', body: JSON.stringify({ offset: $('regOffset').value }) });
     $('regValue').value = data.value;
     $('regResult').textContent = JSON.stringify(data, null, 2);
   } catch (err) {
@@ -425,10 +348,7 @@ async function readRegister() {
 
 async function writeRegister() {
   try {
-    const data = await api('/api/register/write', {
-      method: 'POST',
-      body: JSON.stringify({ offset: $('regOffset').value, value: $('regValue').value }),
-    });
+    const data = await api('/api/register/write', { method: 'POST', body: JSON.stringify({ offset: $('regOffset').value, value: $('regValue').value }) });
     $('regResult').textContent = JSON.stringify(data, null, 2);
     toast('Register written', 'ok');
   } catch (err) {
@@ -437,129 +357,60 @@ async function writeRegister() {
   }
 }
 
+// ── FDB ───────────────────────────────────────────────────────────────────────
 function fdbPayload() {
-  return {
-    mac: $('fdbMac').value.trim(),
-    port: Number($('fdbPort').value) || 0,
-    vlanValid: $('fdbVlanValid').checked,
-    vlanId: Number($('fdbVlanId').value) || 0,
-  };
+  return { mac: $('fdbMac').value.trim(), port: Number($('fdbPort').value) || 0, vlanValid: $('fdbVlanValid').checked, vlanId: Number($('fdbVlanId').value) || 0 };
 }
 
 async function fdbCall(path, payload = fdbPayload()) {
   try {
     const data = await api(path, { method: 'POST', body: JSON.stringify(payload) });
     $('fdbResult').textContent = JSON.stringify(data, null, 2);
-    toast(data.status || 'FDB operation complete', 'ok');
+    toast(data.status || 'FDB done', 'ok');
   } catch (err) {
     $('fdbResult').textContent = `FDB failed: ${err.message}`;
     toast(`FDB failed: ${err.message}`, 'bad');
   }
 }
 
+// ── HyperTerminal (Serial) ────────────────────────────────────────────────────
 async function refreshSerialStatus() {
   const data = await api('/api/serial/status');
   const t = data.terminal || {};
 
-  const portSelect = $('serialPort');
-  const currentPort = portSelect.value || t.selectedPort || '';
-  portSelect.innerHTML = (t.ports || []).map((p) =>
-    `<option value="${escapeHtml(p.portName || p.PortName)}">${escapeHtml(p.displayName || p.DisplayName || p.portName || p.PortName)}</option>`
+  const portSel = $('serialPort');
+  const curPort = portSel.value || t.selectedPort || '';
+  portSel.innerHTML = (t.ports || []).map(p =>
+    `<option value="${esc(p.portName || p.PortName)}">${esc(p.displayName || p.DisplayName || p.portName || p.PortName)}</option>`
   ).join('');
-  if (currentPort) portSelect.value = currentPort;
+  if (curPort) portSel.value = curPort;
 
-  const baudSelect = $('serialBaud');
-  const currentBaud = baudSelect.value || String(t.selectedBaudRate || 115200);
-  baudSelect.innerHTML = (t.baudRates || [9600, 19200, 38400, 57600, 115200, 230400, 921600])
-    .map((b) => `<option value="${b}">${b}</option>`).join('');
-  baudSelect.value = currentBaud;
+  const baudSel = $('serialBaud');
+  const curBaud = baudSel.value || String(t.selectedBaudRate || 115200);
+  baudSel.innerHTML = (t.baudRates || [9600, 19200, 38400, 57600, 115200, 230400, 921600])
+    .map(b => `<option value="${b}">${b}</option>`).join('');
+  baudSel.value = curBaud;
 
-  $('serialState').textContent = t.connectionStatus || (t.isConnected ? 'connected' : 'disconnected');
-  $('serialState').classList.toggle('connected', Boolean(t.isConnected));
-  if (!state.streamActive) {
-    $('serialOutput').textContent = t.terminalOutput || 'No terminal output.';
-    $('serialOutput').scrollTop = $('serialOutput').scrollHeight;
-  }
-}
+  const st = $('serialState');
+  st.textContent = t.connectionStatus || (t.isConnected ? 'connected' : 'disconnected');
+  st.style.color = t.isConnected ? 'var(--green)' : 'var(--muted)';
 
-async function startTtyStream() {
-  if (state.serialReader) {
-    try { state.serialReader.cancel(); } catch { /* ignore */ }
-    state.serialReader = null;
-  }
-  try {
-    const response = await fetch('/api/tty/stream');
-    if (!response.ok || !response.body) return;
-    const reader = response.body.getReader();
-    state.serialReader = reader;
-    state.streamActive = true;
-    const decoder = new TextDecoder();
-    let buf = '';
-    (async () => {
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop();
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            try {
-              const msg = JSON.parse(trimmed);
-              const hex = msg.hex || msg.data || '';
-              if (!hex) continue;
-              const bytes = hex.match(/.{1,2}/g) || [];
-              const text = bytes.map((b) => String.fromCharCode(parseInt(b, 16))).join('');
-              const out = $('serialOutput');
-              if (out.textContent === 'No terminal output.') out.textContent = '';
-              out.textContent += text;
-              out.scrollTop = out.scrollHeight;
-            } catch { /* malformed line */ }
-          }
-        }
-      } catch { /* stream cancelled or closed */ }
-      state.streamActive = false;
-    })();
-  } catch { /* stream unavailable */ }
+  $('serialOutput').textContent = t.terminalOutput || 'No terminal output.';
+  $('serialOutput').scrollTop = $('serialOutput').scrollHeight;
 }
 
 async function connectSerial() {
   try {
-    await api('/api/serial/connect', {
-      method: 'POST',
-      body: JSON.stringify({
-        port: $('serialPort').value,
-        baudRate: Number($('serialBaud').value) || 115200,
-      }),
-    });
+    await api('/api/serial/connect', { method: 'POST', body: JSON.stringify({ port: $('serialPort').value, baudRate: Number($('serialBaud').value) || 115200 }) });
     toast('Serial connected', 'ok');
     await refreshSerialStatus();
-    startTtyStream();
-  } catch (err) {
-    toast(`Serial connect failed: ${err.message}`, 'bad');
-  }
+  } catch (err) { toast(`Serial connect failed: ${err.message}`, 'bad'); }
 }
 
 async function disconnectSerial() {
-  if (state.serialReader) {
-    try { state.serialReader.cancel(); } catch { /* ignore */ }
-    state.serialReader = null;
-  }
-  state.streamActive = false;
   await api('/api/serial/disconnect', { method: 'POST', body: '{}' });
   toast('Serial disconnected', 'ok');
   await refreshSerialStatus();
-}
-
-async function sendBreak() {
-  try {
-    await api('/api/serial/break', { method: 'POST', body: '{}' });
-    toast('Break signal sent', 'ok');
-  } catch (err) {
-    toast(`Break failed: ${err.message}`, 'bad');
-  }
 }
 
 async function sendSerial() {
@@ -569,65 +420,95 @@ async function sendSerial() {
     await api('/api/serial/send', { method: 'POST', body: JSON.stringify({ text }) });
     $('serialInput').value = '';
     await refreshSerialStatus();
-  } catch (err) {
-    toast(`Serial send failed: ${err.message}`, 'bad');
-  }
+  } catch (err) { toast(`Serial send failed: ${err.message}`, 'bad'); }
 }
 
-async function clearSerial() {
-  await api('/api/serial/clear', { method: 'POST', body: '{}' });
-  await refreshSerialStatus();
+// ── Logs ──────────────────────────────────────────────────────────────────────
+async function loadLogs() {
+  try {
+    const data = await api('/api/logs');
+    $('logsBox').textContent = JSON.stringify(data, null, 2);
+  } catch (err) { $('logsBox').textContent = `Log load failed: ${err.message}`; }
 }
 
+// ── WebSocket (worker events) ─────────────────────────────────────────────────
+function initWebSocket() {
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onmessage = ({ data }) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === 'workerEvent') {
+        const p = msg.payload || {};
+        if (p.type === 'serialData' || p.type === 'terminal') {
+          appendSeqTerm(p.text || p.data || '');
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  };
+  ws.onclose = () => setTimeout(initWebSocket, 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   initTabs();
+  initWebSocket();
+
+  $('startTime').textContent = new Date().toLocaleTimeString();
+
+  // Packet Generator
   $('refreshAll').addEventListener('click', refreshInterfaces);
-  $('captureRefresh').addEventListener('click', refreshCaptureStatus);
   $('build').addEventListener('click', previewFrame);
   $('send').addEventListener('click', sendFrame);
+  ['protocol','dstMac','srcMac','srcIp','dstIp','srcPort','dstPort','payload','vlanEnabled','vlanId','vlanPriority']
+    .forEach(id => $(id)?.addEventListener('change', previewFrame));
+
+  // Capture
+  $('captureRefresh').addEventListener('click', refreshCaptureStatus);
   $('captureStart').addEventListener('click', startCapture);
   $('captureStop').addEventListener('click', stopCapture);
   $('captureClear').addEventListener('click', clearCapture);
   $('captureFilter').addEventListener('input', renderCaptureRows);
-  $('refreshLogs').addEventListener('click', loadLogs);
-  $('serialRefresh').addEventListener('click', refreshSerialStatus);
-  $('serialConnect').addEventListener('click', connectSerial);
-  $('serialDisconnect').addEventListener('click', disconnectSerial);
-  $('serialBreak').addEventListener('click', sendBreak);
-  $('serialSend').addEventListener('click', sendSerial);
-  $('serialClear').addEventListener('click', clearSerial);
-  $('serialInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendSerial();
-  });
-  $('regStatusRefresh').addEventListener('click', refreshRegisterStatus);
+
+  // Scenario Lab
+  $('tcRefresh').addEventListener('click', loadTestCases);
+  $('tcAddGroup').addEventListener('click', addTcGroup);
+  $('tcAdd').addEventListener('click', addTcFromCurrent);
+  $('tcSaveCurrent').addEventListener('click', saveTcCurrent);
+  $('seqTermSend').addEventListener('click', seqTermSend);
+  $('seqTermInput').addEventListener('keydown', e => { if (e.key === 'Enter') seqTermSend(); });
+  $('clearSeqTerminal').addEventListener('click', () => { $('seqTermOutput').textContent = ''; });
+
+  // Register / FDB
+  $('regStatusRefresh').addEventListener('click', refreshRegStatus);
   $('regRead').addEventListener('click', readRegister);
   $('regWrite').addEventListener('click', writeRegister);
   $('fdbRead').addEventListener('click', () => fdbCall('/api/fdb/read'));
   $('fdbWrite').addEventListener('click', () => fdbCall('/api/fdb/write'));
   $('fdbDelete').addEventListener('click', () => fdbCall('/api/fdb/delete'));
-  $('fdbFlush').addEventListener('click', () => {
-    if (confirm('Flush all FDB entries?')) fdbCall('/api/fdb/flush', {});
-  });
-  $('tcRefresh').addEventListener('click', loadTestCases);
-  $('tcAddGroup').addEventListener('click', addTestCaseGroup);
-  $('tcAdd').addEventListener('click', addTestCaseFromCurrent);
-  $('tcSaveCurrent').addEventListener('click', saveCurrentToSelected);
-  $('tcRunSequence').addEventListener('click', runSequence);
-  ['protocol', 'dstMac', 'srcMac', 'srcIp', 'dstIp', 'srcPort', 'dstPort', 'payload', 'vlanEnabled', 'vlanId', 'vlanPriority'].forEach((id) => {
-    $(id)?.addEventListener('change', previewFrame);
-  });
+  $('fdbFlush').addEventListener('click', () => { if (confirm('Flush all FDB entries?')) fdbCall('/api/fdb/flush', {}); });
+
+  // HyperTerminal
+  $('serialRefresh').addEventListener('click', refreshSerialStatus);
+  $('serialConnect').addEventListener('click', connectSerial);
+  $('serialDisconnect').addEventListener('click', disconnectSerial);
+  $('serialSend').addEventListener('click', sendSerial);
+  $('serialClear').addEventListener('click', async () => { await api('/api/serial/clear', { method: 'POST', body: '{}' }); await refreshSerialStatus(); });
+  $('serialInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendSerial(); });
+
+  // Settings
+  $('refreshLogs').addEventListener('click', loadLogs);
 
   try {
     await api('/api/health');
     await refreshInterfaces();
     await loadLogs();
     await refreshSerialStatus();
-    await refreshRegisterStatus();
+    await refreshRegStatus();
     await loadTestCases();
     startCapturePolling();
-    state.serialTimer = setInterval(refreshSerialStatus, 1500);
+    state.serialTimer = setInterval(refreshSerialStatus, 2000);
   } catch (err) {
-    setStatus(`Offline - ${err.message}`, false);
+    setStatus(`Offline — ${err.message}`, false);
     toast(`Server not reachable: ${err.message}`, 'bad');
   }
 }

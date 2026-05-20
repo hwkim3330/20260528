@@ -6,11 +6,9 @@ namespace EthernetPacketGenerator.Models;
 public enum SequenceEventType
 {
     Delay,
-    RegWrite, RegRead, RegWaitFor,
-    FdbWrite, FdbRead, FdbWaitFor, FdbFlush,
-    CaptureVerify,   // capture on interface, match filter, timeout → PASS/FAIL
-    SerialSend,      // send text/hex on serial port
-    SerialVerify     // expect pattern in serial output within timeout → PASS/FAIL
+    RegWrite, RegRead, RegVerify,
+    FdbWrite, FdbWriteBucket, FdbRead, FdbReadBucket, FdbWaitFor, FdbFlush,
+    RxVerify
 }
 
 public class SequenceEvent : INotifyPropertyChanged
@@ -27,22 +25,38 @@ public class SequenceEvent : INotifyPropertyChanged
     private uint _expected = 0;
     private int  _timeoutMs = 1000;
 
+    // ── User-defined label ────────────────────────────────────────────────────
+    private string _label = string.Empty;
+
     // ── Fdb* ─────────────────────────────────────────────────────────────────
-    private string _macAddress  = "00:00:00:00:00:00";
-    private bool   _vlanValid   = false;
-    private int    _vlanId      = 0;
-    private int    _port        = 0;
-    private int    _bucket      = 0;
-    private int    _slotBitmap  = 1;   // default: Slot 0 = 0b0001
+    private string _macAddress     = "00:00:00:00:00:00";
+    private bool   _vlanValid      = false;
+    private int    _vlanId         = 0;
+    private int    _port           = 0;
+    private int    _bucket         = 0;
+    private int    _slotBitmap     = 1;   // default: Slot 0 = 0b0001
+    private string _fdbExpectedMac = string.Empty;
 
-    // ── CaptureVerify ─────────────────────────────────────────────────────────
-    private string _captureInterface    = "";
-    private string _captureFilter       = "";   // e.g. "udp", "ip:192.168.1.1", "mac:aa:bb"
-    private int    _captureExpected     = 1;    // min matching packets to PASS
+    // ── RxVerify ─────────────────────────────────────────────────────────────
+    // ExpectedPort: 패킷이 수신되어야 하는 포트 인덱스 (포트-MAC 매핑 기준)
+    // ExpectedDstMac: 캡처에서 확인할 DA. 비어있으면 직전 FdbWrite의 MacAddress 사용
+    private int    _expectedPort    = -1;
+    private string _expectedDstMac  = string.Empty;
 
-    // ── SerialSend / SerialVerify ─────────────────────────────────────────────
-    private string _serialText   = "";    // text to send or pattern to expect
-    private string _serialHex    = "";    // hex bytes to send (alternative to text)
+    public int    ExpectedPort   { get => _expectedPort;   set { _expectedPort   = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); } }
+    public string ExpectedDstMac { get => _expectedDstMac; set { _expectedDstMac = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); } }
+
+    public string Label
+    {
+        get => _label;
+        set { _label = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
+    }
+
+    public string FdbExpectedMac
+    {
+        get => _fdbExpectedMac;
+        set { _fdbExpectedMac = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
+    }
 
     // ── Properties ───────────────────────────────────────────────────────────
     public SequenceEventType EventType
@@ -123,53 +137,22 @@ public class SequenceEvent : INotifyPropertyChanged
         set { _slotBitmap = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
     }
 
-    public string CaptureInterface
-    {
-        get => _captureInterface;
-        set { _captureInterface = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
-    }
-
-    public string CaptureFilter
-    {
-        get => _captureFilter;
-        set { _captureFilter = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
-    }
-
-    public int CaptureExpected
-    {
-        get => _captureExpected;
-        set { _captureExpected = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
-    }
-
-    public string SerialText
-    {
-        get => _serialText;
-        set { _serialText = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
-    }
-
-    public string SerialHex
-    {
-        get => _serialHex;
-        set { _serialHex = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayLabel)); }
-    }
-
     // ── Display ───────────────────────────────────────────────────────────────
     public string DisplayLabel => EventType switch
     {
         SequenceEventType.Delay          => $"⏱  Delay {DelayMs} ms",
         SequenceEventType.RegWrite       => $"✎  write  0x{Address:X8}  =  0x{Value:X8}",
         SequenceEventType.RegRead        => $"⤷  read   0x{Address:X8}",
-        SequenceEventType.RegWaitFor     => $"⏳  wait   0x{Address:X8} & 0x{Mask:X8} == 0x{Expected:X8}  ({TimeoutMs}ms)",
-        SequenceEventType.FdbWrite       => $"📋  FDB write  {MacAddress}  Port:{Port}",
+        SequenceEventType.RegVerify         => $"✅  verify 0x{Address:X8} & 0x{Mask:X8} == 0x{Expected:X8}  ({TimeoutMs}ms)",
+        SequenceEventType.FdbWrite       => $"📋  FDB write  {MacAddress}  Port:0b{Convert.ToString(Port, 2).PadLeft(6, '0')}",
+        SequenceEventType.FdbWriteBucket => $"📋  FDB write(bucket)  {MacAddress}  B:{Bucket} S:0x{SlotBitmap:X}",
         SequenceEventType.FdbRead        => $"🔍  FDB read   {MacAddress}",
-        SequenceEventType.FdbWaitFor     => $"⏳  wait   0x{Address:X8} & 0x{Mask:X8} == 0x{Expected:X8}  ({TimeoutMs}ms)",
-        SequenceEventType.FdbFlush       => "🗑  FDB flush  (전체 테이블 초기화)",
-        SequenceEventType.CaptureVerify  => $"📡  capture [{(string.IsNullOrEmpty(CaptureInterface) ? "any" : CaptureInterface)}]" +
-                                            $"{(string.IsNullOrEmpty(CaptureFilter) ? "" : $"  \"{CaptureFilter}\"")}  ×{CaptureExpected}  {TimeoutMs}ms",
-        SequenceEventType.SerialSend     => string.IsNullOrEmpty(SerialHex)
-                                            ? $"→  serial send \"{SerialText}\""
-                                            : $"→  serial send hex [{SerialHex}]",
-        SequenceEventType.SerialVerify   => $"⏳  serial expect \"{SerialText}\"  ({TimeoutMs}ms)",
+        SequenceEventType.FdbReadBucket  => string.IsNullOrWhiteSpace(FdbExpectedMac)
+            ? $"🔍  FDB read(bucket)  B:{Bucket} S:0x{SlotBitmap:X}"
+            : $"✅  FDB verify(bucket)  B:{Bucket} S:0x{SlotBitmap:X}  exp:{FdbExpectedMac}",
+        SequenceEventType.FdbWaitFor     => $"⏳  FDB wait  {MacAddress}  Port:0b{Convert.ToString(Port, 2).PadLeft(6, '0')}  ({TimeoutMs}ms)",
+        SequenceEventType.FdbFlush       => "🗑  FDB Initialize  (전체 테이블 초기화)",
+        SequenceEventType.RxVerify       => $"📥  RX Verify  DA={ExpectedDstMac}  ExpPort={ExpectedPort}  timeout={TimeoutMs}ms",
         _                                => "?"
     };
 

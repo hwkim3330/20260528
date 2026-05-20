@@ -6,78 +6,220 @@
     <DockPanel Background="{StaticResource SurfaceBrush}">
 
         <!-- Header -->
-        <TextBlock DockPanel.Dock="Top" Text="TEST SEQUENCE" Style="{StaticResource PanelHeader}"/>
+        <TextBlock x:Name="HeaderLabel" DockPanel.Dock="Top"
+                   Text="{Binding PacketListTitle}"
+                   Style="{StaticResource PanelHeader}"/>
 
-        <!-- ══ Send 컨트롤 행 (시나리오랩 전용, ShowSendControls=True) ══════ -->
-        <Border x:Name="SendControlRow"
-                DockPanel.Dock="Top"
-                Background="{StaticResource SurfaceAltBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,0,0,1"
-                Padding="4,3,4,3">
-            <StackPanel Orientation="Horizontal">
-                <!-- Send Selected -->
+        <!-- ══ 툴바 한 줄: 패킷 버튼 5개 | 구분선 | 주기 예상 Repeat | 구분선 | Send Selected Send List | 스피너 ══ -->
+        <WrapPanel x:Name="ToolbarPanel" DockPanel.Dock="Top"
+                   Orientation="Horizontal"
+                   Margin="4,3,4,3"
+                   ItemHeight="28">
+
+            <!-- 패킷 조작 버튼 5개 (런 시퀀스 중 비활성화 대상) -->
+            <StackPanel x:Name="PacketEditButtons" Orientation="Horizontal">
+                <Button ToolTip="패킷 추가"    Width="32" Height="26" FontSize="14" Padding="0"
+                        Content="＋"
+                        Command="{Binding AddPacketCommand}"/>
+                <Button ToolTip="선택 삭제"    Width="32" Height="26" FontSize="14" Padding="0" Margin="2,0,0,0"
+                        Content="－"
+                        Command="{Binding DeleteCheckedItemsCommand}"/>
+                <Button ToolTip="복제"         Width="32" Height="26" FontSize="13" Padding="0" Margin="2,0,0,0"
+                        Content="❐"
+                        Command="{Binding DuplicatePacketCommand}"/>
+                <Button ToolTip="위로 이동"    Width="32" Height="26" FontSize="15" Padding="0" Margin="2,0,0,0"
+                        Content="↑"
+                        Command="{Binding MoveUpCommand}"/>
+                <Button ToolTip="아래로 이동"  Width="32" Height="26" FontSize="15" Padding="0" Margin="2,0,0,0"
+                        Content="↓"
+                        Command="{Binding MoveDownCommand}"/>
+            </StackPanel>
+
+            <!-- Send Controls (ShowSendControls=True일 때만 표시) -->
+            <StackPanel x:Name="SendInlinePanel" Orientation="Horizontal"
+                        Margin="6,0,0,0" Visibility="Collapsed"
+                        VerticalAlignment="Center">
+
+                <!-- 구분선 -->
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="0,3,8,3"/>
+
+                <!-- TC 선택기 (IsEthernetOnly=True인 패킷 제너레이터 탭에만 표시) -->
+                <StackPanel x:Name="TcSelectorPanel" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,8,0"
+                            Visibility="Collapsed">
+                    <Button x:Name="TcSelectBtn"
+                            Height="24" Padding="8,2" FontSize="11"
+                            Content="TC 선택 ▾"
+                            ToolTip="테스트케이스 목록에서 시퀀스를 로드합니다"
+                            Click="TcSelectBtn_Click"/>
+                    <Button x:Name="TcClearBtn"
+                            Height="24" Width="24" Padding="0" FontSize="12"
+                            Content="×" Margin="2,0,0,0"
+                            ToolTip="TC 선택 취소"
+                            Foreground="#FF6666"
+                            Visibility="Collapsed"
+                            Click="TcClearBtn_Click"/>
+                    <Popup x:Name="TcSelectPopup"
+                           PlacementTarget="{Binding ElementName=TcSelectBtn}"
+                           Placement="Bottom" StaysOpen="False"
+                           AllowsTransparency="True" PopupAnimation="Slide">
+                        <Border Background="#1A1A2E" BorderBrush="#3A3A5A"
+                                BorderThickness="1" CornerRadius="3"
+                                MinWidth="220" MaxHeight="320">
+                            <TreeView x:Name="TcGroupTree"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      FontSize="11"
+                                      SelectedItemChanged="TcGroupTree_SelectedItemChanged">
+                                <TreeView.Resources>
+                                    <HierarchicalDataTemplate DataType="{x:Type models:TestCaseGroup}"
+                                                              ItemsSource="{Binding TestCases}">
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="#88CCFF" FontWeight="SemiBold"
+                                                   Padding="2,1"/>
+                                    </HierarchicalDataTemplate>
+                                    <DataTemplate DataType="{x:Type models:TestCaseEntry}">
+                                        <TextBlock Text="{Binding Name}"
+                                                   Foreground="#CCDDFF"
+                                                   Padding="2,1"/>
+                                    </DataTemplate>
+                                </TreeView.Resources>
+                            </TreeView>
+                        </Border>
+                    </Popup>
+                </StackPanel>
+
+                <!-- 주기(ms) + 예상(ms) — UseSequenceTitle=True 시 숨김 -->
+                <StackPanel x:Name="CyclePeriodPanel" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="주기(ms):" VerticalAlignment="Center"
+                               Foreground="{StaticResource ForegroundBrush}" FontSize="11" Margin="0,0,4,0"/>
+                    <TextBox x:Name="CyclePeriodBox"
+                             Width="56" Height="24" VerticalAlignment="Center" FontSize="11"/>
+
+                    <!-- 예상(ms) / 합산 예상(ms) -->
+                    <TextBlock x:Name="EstimatedLabelHeader"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource ForegroundBrush}" FontSize="11" Margin="8,0,4,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="예상(ms):"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasTestSequence}" Value="True">
+                                        <Setter Property="Text" Value="합산 예상(ms):"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock x:Name="EstimatedLabel"
+                               VerticalAlignment="Center" FontSize="11" Foreground="#88CCFF" MinWidth="60"/>
+                </StackPanel>
+
+                <!-- Repeat -->
+                <CheckBox x:Name="RepeatCheckBox"
+                          Content="Repeat" VerticalAlignment="Center" Margin="8,0,0,0"
+                          FontSize="11"
+                          Foreground="{StaticResource ForegroundBrush}"/>
+
+                <!-- Fail 무시 -->
+                <CheckBox x:Name="ContinueOnFailCheckBox"
+                          Content="Fail 무시" VerticalAlignment="Center" Margin="8,0,0,0"
+                          FontSize="11"
+                          Foreground="{StaticResource ForegroundBrush}"
+                          ToolTip="체크 시 Verify/FdbWaitFor 실패해도 다음 스텝으로 진행"/>
+
+                <!-- 구분선 -->
+                <Rectangle Width="1" Fill="{StaticResource BorderBrush}" Margin="8,3,8,3"/>
+
+                <!-- Send Selected (Command/Content/배경은 코드비하인드 WireSendButtons에서 설정) -->
                 <Button x:Name="SendSelectedBtn"
-                        Content="▶ Send Selected"
-                        MinWidth="112" Height="24" Padding="6,0" Margin="0,0,4,0"
-                        FontSize="11"
+                        Height="26" MinWidth="150" Padding="10,4" FontSize="11" Margin="0,0,6,0"
+                        Content="▶  Send Selected"
                         Click="SendSelectedBtn_Click"/>
 
-                <!-- Send Sequence -->
-                <Button x:Name="SendSequenceBtn"
-                        Content="▶ Send Sequence"
-                        MinWidth="112" Height="24" Padding="6,0" Margin="0,0,8,0"
-                        FontSize="11"
-                        Click="SendSequenceBtn_Click"/>
+                <!-- Send List -->
+                <Button x:Name="SendListBtn"
+                        Height="26" MinWidth="130" Padding="10,4" FontSize="11"
+                        Content="▶  Send List"
+                        Click="SendListBtn_Click"/>
 
-                <!-- 구분선 -->
-                <Border Width="1" Height="16" Margin="0,0,8,0"
-                        Background="{StaticResource BorderBrush}"/>
+                <!-- 스피너 (IsSending=True일 때만 표시, 코드비하인드에서 Visibility 제어) -->
+                <Border x:Name="SpinnerBorder"
+                        Width="20" Height="20" VerticalAlignment="Center" Margin="6,0,0,0"
+                        Visibility="Collapsed">
+                    <Ellipse Width="14" Height="14"
+                             Stroke="#7C7CFF" StrokeThickness="2.5"
+                             StrokeDashArray="2 2"
+                             VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Ellipse.RenderTransform>
+                            <RotateTransform x:Name="SpinnerRotate" Angle="0" CenterX="7" CenterY="7"/>
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation
+                                            Storyboard.TargetName="SpinnerRotate"
+                                            Storyboard.TargetProperty="Angle"
+                                            From="0" To="360" Duration="0:0:0.8"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                </Border>
+                <!-- 아이들 점 (IsSending=False일 때 표시, 코드비하인드에서 Visibility 제어) -->
+                <Ellipse x:Name="IdleDot"
+                         Width="8" Height="8" Fill="#55556A"
+                         VerticalAlignment="Center" Margin="4,0,0,0"
+                         Visibility="Visible"/>
 
-                <!-- 패킷 조작 버튼 -->
-                <Button Content="＋" ToolTip="패킷 추가"   Width="30" Height="24" FontSize="11" Command="{Binding AddPacketCommand}"/>
-                <Button Content="－" ToolTip="선택 삭제"   Width="30" Height="24" FontSize="11" Margin="2,0,0,0" Command="{Binding DeleteCheckedItemsCommand}"/>
-                <Button Content="❐"  ToolTip="복제"        Width="30" Height="24" FontSize="11" Margin="2,0,0,0" Command="{Binding DuplicatePacketCommand}"/>
-                <Button Content="↑"  ToolTip="위로 이동"   Width="30" Height="24" FontSize="13" Margin="2,0,0,0" Command="{Binding MoveUpCommand}"/>
-                <Button Content="↓"  ToolTip="아래로 이동" Width="30" Height="24" FontSize="13" Margin="2,0,0,0" Command="{Binding MoveDownCommand}"/>
+                <!-- Start / End 시간 표시 (SendVM.StartTime / EndTime) -->
+                <StackPanel x:Name="TimePanel" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="8,0,0,0">
+                    <TextBlock Text="S:" FontSize="10" Foreground="#88AACC" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StartTimeLabel" FontSize="10" Foreground="#AACCFF"
+                               VerticalAlignment="Center" Margin="2,0,6,0" MinWidth="60"/>
+                    <TextBlock Text="E:" FontSize="10" Foreground="#88AACC" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="EndTimeLabel" FontSize="10" Foreground="#AACCFF"
+                               VerticalAlignment="Center" Margin="2,0,0,0" MinWidth="60"/>
+                </StackPanel>
 
-                <!-- 구분선 -->
-                <Border Width="1" Height="16" Margin="8,0,8,0"
-                        Background="{StaticResource BorderBrush}"/>
+                <!-- 드랍 경고 (주기 < 예상 시간) -->
+                <Border x:Name="DropWarningBorder"
+                        Background="#3A0000"
+                        BorderBrush="#CC2222"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Padding="5,2"
+                        Margin="6,0,0,0"
+                        Visibility="Collapsed"
+                        VerticalAlignment="Center">
+                    <TextBlock x:Name="DropWarningLabel"
+                               Text="⚠ 드랍"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="#FF6666"
+                               VerticalAlignment="Center"/>
+                </Border>
 
-                <!-- 주기 / 예상 / Repeat -->
-                <TextBlock Text="주기(ms):" VerticalAlignment="Center"
-                           Foreground="{StaticResource ForegroundBrush}"
-                           FontSize="11" Margin="0,0,4,0"/>
-                <TextBox x:Name="CyclePeriodBox"
-                         Width="52" Height="22" VerticalContentAlignment="Center"
-                         Margin="0,0,8,0"/>
-                <TextBlock Text="예상:" VerticalAlignment="Center"
-                           Foreground="{StaticResource MutedForeground}"
-                           FontSize="11" Margin="0,0,3,0"/>
-                <TextBlock x:Name="EstimatedTimeBlock"
-                           Foreground="#88CCFF" VerticalAlignment="Center"
-                           FontSize="11" MinWidth="65" Margin="0,0,8,0"/>
-                <CheckBox x:Name="RepeatCheckBox"
-                          Content="Repeat"
-                          Foreground="{StaticResource ForegroundBrush}"
-                          VerticalAlignment="Center"/>
+                <!-- 여유/초과 표시 -->
+                <TextBlock x:Name="PassResultLabel"
+                           FontSize="11" Margin="6,0,0,0"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="#44FF88"/>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
             </StackPanel>
-        </Border>
 
-        <!-- ══ 패킷 제너레이터 전용 툴바 ══════════════════════════════════════ -->
-        <StackPanel x:Name="PacketOnlyToolbar"
-                    DockPanel.Dock="Top" Orientation="Horizontal"
-                    Margin="4,3,4,2"
-                    Visibility="Collapsed">
-            <Button Content="＋" ToolTip="패킷 추가"   Width="30" Height="22" FontSize="11" Command="{Binding AddPacketCommand}"/>
-            <Button Content="－" ToolTip="선택 삭제"   Width="30" Height="22" FontSize="11" Margin="2,0,0,0" Command="{Binding DeleteCheckedItemsCommand}"/>
-            <Button Content="❐"  ToolTip="복제"        Width="30" Height="22" FontSize="11" Margin="2,0,0,0" Command="{Binding DuplicatePacketCommand}"/>
-            <Button Content="↑"  ToolTip="위로 이동"   Width="30" Height="22" FontSize="13" Margin="2,0,0,0" Command="{Binding MoveUpCommand}"/>
-            <Button Content="↓"  ToolTip="아래로 이동" Width="30" Height="22" FontSize="13" Margin="2,0,0,0" Command="{Binding MoveDownCommand}"/>
-        </StackPanel>
+        </WrapPanel>
 
-        <!-- Sequence ListView -->
+        <!-- Sequence ListView + drop indicator overlay -->
+        <Grid>
         <ListView x:Name="SequenceList"
                   ItemsSource="{Binding Sequence}"
                   SelectedItem="{Binding SelectedSequenceItem, Mode=TwoWay}"
@@ -88,7 +230,11 @@
                   VirtualizingStackPanel.IsVirtualizing="True"
                   VirtualizingStackPanel.VirtualizationMode="Recycling"
                   UseLayoutRounding="True"
-                  Loaded="SequenceList_Loaded">
+                  Loaded="SequenceList_Loaded"
+                  PreviewMouseLeftButtonDown="SequenceList_PreviewMouseLeftButtonDown"
+                  PreviewMouseMove="SequenceList_PreviewMouseMove"
+                  PreviewMouseLeftButtonUp="SequenceList_PreviewMouseLeftButtonUp"
+                  MouseLeave="SequenceList_MouseLeave">
             <ListView.View>
                 <GridView>
                     <!-- ☑ 체크박스 컬럼 -->
@@ -186,7 +332,7 @@
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>
 
-                    <!-- Interface -->
+                    <!-- Interface (패킷 행에만 팝업 표시) -->
                     <GridViewColumn Header="Interface" Width="180">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
@@ -234,12 +380,37 @@
                     </GridViewColumn>
 
                     <!-- Description -->
-                    <GridViewColumn Header="Description" Width="280">
+                    <GridViewColumn Header="Description" Width="220">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding DisplayDescription}"
                                            Foreground="{StaticResource ForegroundBrush}"
                                            TextTrimming="CharacterEllipsis"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+
+                    <!-- Result -->
+                    <GridViewColumn Header="Result" Width="72">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock x:Name="ResultLabel"
+                                           Text="{Binding TestResultText}"
+                                           FontWeight="SemiBold" FontSize="11"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource MutedForeground}"/>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding TestResult}" Value="Pass">
+                                        <Setter TargetName="ResultLabel" Property="Foreground" Value="#44FF88"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding TestResult}" Value="Fail">
+                                        <Setter TargetName="ResultLabel" Property="Foreground" Value="#FF4444"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding TestResult}" Value="Running">
+                                        <Setter TargetName="ResultLabel" Property="Foreground" Value="#FFCC44"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
                     </GridViewColumn>
@@ -265,6 +436,15 @@
                 </Style>
             </ListView.ItemContainerStyle>
         </ListView>
+
+        <!-- Drop indicator overlay (horizontal line) -->
+        <Canvas x:Name="DropIndicatorCanvas" IsHitTestVisible="False" Visibility="Collapsed">
+            <Rectangle x:Name="DropIndicatorLine"
+                       Height="2" Width="99999"
+                       Fill="#4488FF"
+                       Canvas.Left="0" Canvas.Top="0"/>
+        </Canvas>
+        </Grid>
 
     </DockPanel>
 </UserControl>

@@ -123,11 +123,8 @@ public class CaptureRow
     public string DetailText { get; init; } = string.Empty;
     public string HexDump { get; init; } = string.Empty;
     public byte[] RawData { get; init; } = Array.Empty<byte>();
-    public string HexPreview => RawData.Length == 0
-        ? string.Empty
-        : string.Join(" ", RawData.Take(Math.Min(32, RawData.Length)).Select(b => b.ToString("X2")));
     public string SearchText =>
-        $"{No} {Time} {InterfaceName} {SrcMac} {DstMac} {Source} {Destination} {Protocol} {Length} {Info} {HexPreview}".ToLowerInvariant();
+        $"{No} {Time} {InterfaceName} {SrcMac} {DstMac} {Source} {Destination} {Protocol} {Length} {Info}".ToLowerInvariant();
 }
 
 public class CaptureInterfaceItem : INotifyPropertyChanged

@@ -73,6 +73,4 @@ public class RegisterViewerViewModel : ViewModelBase
         await _fdbService.DeleteEntryByMacAsync(mac, vlanValid, vlanId);
 
     public async Task FdbFlushForApiAsync() => await _fdbService.FlushAllAsync();
-
-    public Task<bool?[]> ReadAllPortLinkStatusAsync() => Mdio.ReadAllLinkStatusForApiAsync();
 }

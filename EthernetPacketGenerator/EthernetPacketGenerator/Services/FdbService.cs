@@ -62,6 +62,7 @@ public class FdbService
         uint mac0    = (uint)(bytes[2] << 24 | bytes[3] << 16 | bytes[4] << 8 | bytes[5]);
         uint mac1    = (uint)(bytes[0] << 8  | bytes[1]);
         uint vlanReg = (vlanValid ? 0x1000u : 0u) | ((uint)(vlanId & 0xFFF));
+        // MCU_PORT [8:0]: port는 이미 비트마스크 (0b000001~0b100000)
         uint portReg = (uint)(port & 0x1FF);
 
         await _reg.WriteAsync(OFF_MCU_MAC0, mac0);           ct.ThrowIfCancellationRequested();
@@ -83,6 +84,7 @@ public class FdbService
         uint mac0      = (uint)(bytes[2] << 24 | bytes[3] << 16 | bytes[4] << 8 | bytes[5]);
         uint mac1      = (uint)(bytes[0] << 8  | bytes[1]);
         uint vlanReg   = (vlanValid ? 0x1000u : 0u) | ((uint)(vlanId & 0xFFF));
+        // MCU_PORT [8:0]: port는 이미 비트마스크 (0b000001~0b100000)
         uint portReg   = (uint)(port & 0x1FF);
         uint bucketReg = ((uint)(slotBitmap & 0xF) << 16) | ((uint)(bucket & 0x3FF));
 

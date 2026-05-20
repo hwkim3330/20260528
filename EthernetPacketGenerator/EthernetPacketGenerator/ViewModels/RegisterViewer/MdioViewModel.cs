@@ -249,14 +249,6 @@ public class MdioViewModel : ViewModelBase
         finally { IsBusy = false; }
     }
 
-    public async Task<bool?[]> ReadAllLinkStatusForApiAsync()
-    {
-        var results = new bool?[6];
-        for (int port = 0; port < 6; port++)
-            results[port] = await _mdio.ReadLinkStatusAsync(port);
-        return results;
-    }
-
     private static bool TryParseHex(string text, out uint result)
     {
         var clean = text.Replace("0x", "").Replace("0X", "").Replace("_", "").Trim();

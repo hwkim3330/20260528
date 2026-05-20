@@ -21,6 +21,12 @@ public class TestCaseGroup : INotifyPropertyChanged
         set { _isExpanded = value; OnPropertyChanged(); }
     }
 
+    /// <summary>CSV 파일에서 임포트된 경우 해당 파일 경로 (null이면 수동 생성)</summary>
+    public string? CsvSourcePath { get; set; }
+
+    /// <summary>이 그룹을 파싱했을 당시 CSV 파일의 LastWriteTimeUtc</summary>
+    public DateTime? CsvLastModifiedUtc { get; set; }
+
     public ObservableCollection<TestCaseEntry> TestCases { get; } = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;

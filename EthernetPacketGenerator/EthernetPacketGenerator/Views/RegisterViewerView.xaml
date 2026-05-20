@@ -1208,7 +1208,8 @@
                                                    Style="{StaticResource FieldLabel}"/>
                                         <TextBox   Grid.Row="0" Grid.Column="1"
                                                    Text="{Binding MacInput, UpdateSourceTrigger=PropertyChanged}"
-                                                   FontFamily="Consolas" FontSize="11"/>
+                                                   FontFamily="Consolas" FontSize="11"
+                                                   ToolTip="직접 입력하거나 Port 선택 시 자동 입력됩니다"/>
 
                                         <TextBlock Grid.Row="2" Grid.Column="0" Text="VLAN"
                                                    Style="{StaticResource FieldLabel}"/>
@@ -1222,10 +1223,13 @@
 
                                         <TextBlock Grid.Row="4" Grid.Column="0" Text="Port"
                                                    Style="{StaticResource FieldLabel}"/>
-                                        <TextBox   Grid.Row="4" Grid.Column="1"
-                                                   Text="{Binding PortInput, UpdateSourceTrigger=PropertyChanged}"
-                                                   Width="60" HorizontalAlignment="Left"
-                                                   FontFamily="Consolas"/>
+                                        <ComboBox  Grid.Row="4" Grid.Column="1"
+                                                   ItemsSource="{Binding PortList}"
+                                                   SelectedItem="{Binding SelectedPort}"
+                                                   DisplayMemberPath="Display"
+                                                   HorizontalAlignment="Left"
+                                                   MinWidth="200"
+                                                   FontFamily="Consolas" FontSize="11"/>
                                     </Grid>
 
                                     <!-- by Hash -->

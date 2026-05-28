@@ -3,12 +3,7 @@ const { Router } = require('express');
 const router = Router();
 
 function workerErr(res, err) {
-  res.status(err.workerError ? 502 : 503).json({ ok: false, error: err.message });
-}
-
-function hasWorker(req) {
-  const { workerHub, localWorkerId } = req.app.locals;
-  return workerHub.hasWorker(localWorkerId);
+  res.status(503).json({ ok: false, error: err.message });
 }
 
 function buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter } = {}) {
@@ -23,20 +18,6 @@ function buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter } = {}) {
 // GET /api/capture/status
 router.get('/capture/status', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      const [status, ifaces] = await Promise.all([
-        req.app.locals.localCmd('status'),
-        req.app.locals.localCmd('getinterfaces').catch(() => ({ interfaces: [] }))
-      ]);
-      const interfaces = (ifaces?.interfaces ?? []).map(i => ({
-        name: i.name, description: i.description, state: i.state, mac: i.mac,
-        selected: status?.captureInterfaces?.includes(i.name) ?? false
-      }));
-      return res.json({
-        ok: true, running: status?.capturing ?? false, capturing: status?.capturing ?? false,
-        totalPackets: status?.captureCount ?? 0, captureCount: status?.captureCount ?? 0, interfaces
-      });
-    }
     const pb  = req.app.locals.packetBackend;
     const st  = pb.getCaptureStatus();
     const ifaces = pb.listInterfaces().map(i => ({
@@ -53,11 +34,6 @@ router.get('/capture/packets', async (req, res) => {
   try {
     const limit  = Number(req.query.limit  ?? 1000);
     const offset = Number(req.query.offset ?? 0);
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('getCaptures', { limit, offset });
-      const rows = data?.rows ?? data?.packets ?? [];
-      return res.json({ ok: true, rows, total: data?.total ?? rows.length });
-    }
     const { rows, total } = req.app.locals.packetBackend.getCaptures(limit, offset);
     res.json({ ok: true, rows, total });
   } catch (err) { workerErr(res, err); }
@@ -67,14 +43,17 @@ router.get('/capture/packets', async (req, res) => {
 router.post('/capture/start', async (req, res) => {
   try {
     const body = req.body || {};
-    const { srcMac = '', dstMac = '', etherType = '', bpfFilter: rawBpf = '' } = body;
-    const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter: rawBpf });
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('startCapture', { ...body, bpfFilter }, 10000);
-      return res.json({ ok: true, bpfFilter, ...(data || {}) });
-    }
+    const { srcMac = '', dstMac = '', etherType = '', bpfFilter: rawBpf = '', promisc = false } = body;
+    let bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType, bpfFilter: rawBpf });
+
+    // When no explicit filter is provided and promisc mode is not requested,
+    // auto-build a BPF filter from the interface MACs to suppress flooding noise.
     const pb     = req.app.locals.packetBackend;
     const ifaces = body.interfaces || [];
+    if (!bpfFilter && !promisc && ifaces.length) {
+      bpfFilter = pb.buildIfaceBpfFilter(ifaces);
+    }
+
     pb.clearCapture();
     let captureErr = '';
     pb.startCapture(ifaces, bpfFilter, () => {}, (e) => { captureErr = e.message; });
@@ -102,10 +81,6 @@ router.post('/capture/start', async (req, res) => {
 // POST /api/capture/stop
 router.post('/capture/stop', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('stopCapture', {});
-      return res.json({ ok: true, ...(data || {}) });
-    }
     req.app.locals.packetBackend.stopCapture();
     res.json({ ok: true, capturing: false });
   } catch (err) { workerErr(res, err); }
@@ -114,10 +89,6 @@ router.post('/capture/stop', async (req, res) => {
 // POST /api/capture/clear
 router.post('/capture/clear', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('clearCapture', {});
-      return res.json({ ok: true, ...(data || {}) });
-    }
     req.app.locals.packetBackend.clearCapture();
     res.json({ ok: true });
   } catch (err) { workerErr(res, err); }
@@ -127,15 +98,6 @@ router.post('/capture/clear', async (req, res) => {
 router.post('/capture', async (req, res) => {
   const { interfaces = [], timeoutMs = 5000, limit = 500 } = req.body || {};
   try {
-    if (hasWorker(req)) {
-      await req.app.locals.localCmd('clearCapture', {});
-      await req.app.locals.localCmd('startCapture', { interfaces }, 10000);
-      await new Promise(r => setTimeout(r, Math.min(timeoutMs, 30000)));
-      await req.app.locals.localCmd('stopCapture', {});
-      const data = await req.app.locals.localCmd('getCaptures', { limit, offset: 0 });
-      const rows = data?.rows ?? data?.packets ?? [];
-      return res.json({ ok: true, rows, total: data?.total ?? rows.length });
-    }
     const pb = req.app.locals.packetBackend;
     pb.clearCapture();
     pb.startCapture(interfaces, '', () => {}, () => {});
@@ -148,7 +110,7 @@ router.post('/capture', async (req, res) => {
 
 // POST /api/capture-stream — NDJSON streaming
 router.post('/capture-stream', async (req, res) => {
-  const { workerHub, localWorkerId, packetBackend } = req.app.locals;
+  const { packetBackend } = req.app.locals;
   const {
     interfaces: ifaceArr, interface: ifaceSingle,
     timeoutMs, timeoutSec, srcMac = '', dstMac = '', etherType = ''
@@ -183,48 +145,24 @@ router.post('/capture-stream', async (req, res) => {
   const write = (obj) => { try { res.write(JSON.stringify(obj) + '\n'); } catch {} };
   let stopped = false;
 
-  if (hasWorker(req)) {
-    // ── C# worker path ──────────────────────────────────────────────────────────
-    const stop = async () => {
-      if (stopped) return; stopped = true;
-      workerHub.events.off(`event:${localWorkerId}`, onEvent);
-      try { await workerHub.sendCommand(localWorkerId, 'stopCapture', {}, 5000); } catch {}
-      write({ done: true }); res.end();
-    };
-    const onEvent = (payload) => {
-      if (payload?.kind === 'capture' && payload.record) {
-        const rec = payload.record;
-        if (passesFilter(rec)) write({ type: 'frame', ...rec });
-      }
-    };
-    const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType });
-    try {
-      await workerHub.sendCommand(localWorkerId, 'clearCapture', {}, 5000);
-      await workerHub.sendCommand(localWorkerId, 'startCapture', { interfaces, bpfFilter }, 10000);
-      workerHub.events.on(`event:${localWorkerId}`, onEvent);
-    } catch (err) { write({ error: err.message }); res.end(); return; }
-    const timer = setTimeout(stop, effectiveTimeout);
-    req.on('close', () => { clearTimeout(timer); stop(); });
-  } else {
-    // ── Native cap path ─────────────────────────────────────────────────────────
-    const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType });
-    const onRecord = (rec) => {
-      if (!stopped && passesFilter(rec)) write({ type: 'frame', ...rec });
-    };
-    packetBackend.addStreamCallback(onRecord);
-    packetBackend.clearCapture();
-    const ok = packetBackend.startCapture(interfaces, bpfFilter, () => {}, (e) => write({ error: e.message }));
-    if (!ok) { write({ error: 'No capture device available (install libpcap)' }); res.end(); return; }
+  // ── Native cap path ───────────────────────────────────────────────────────
+  const bpfFilter = buildBpfFilter({ srcMac, dstMac, etherType });
+  const onRecord = (rec) => {
+    if (!stopped && passesFilter(rec)) write({ type: 'frame', ...rec });
+  };
+  packetBackend.addStreamCallback(onRecord);
+  packetBackend.clearCapture();
+  const ok = packetBackend.startCapture(interfaces, bpfFilter, () => {}, (e) => write({ error: e.message }));
+  if (!ok) { write({ error: 'No capture device available (install libpcap)' }); res.end(); return; }
 
-    const stop = () => {
-      if (stopped) return; stopped = true;
-      packetBackend.removeStreamCallback(onRecord);
-      packetBackend.stopCapture();
-      write({ done: true }); res.end();
-    };
-    const timer = setTimeout(stop, effectiveTimeout);
-    req.on('close', () => { clearTimeout(timer); stop(); });
-  }
+  const stop = () => {
+    if (stopped) return; stopped = true;
+    packetBackend.removeStreamCallback(onRecord);
+    packetBackend.stopCapture();
+    write({ done: true }); res.end();
+  };
+  const timer = setTimeout(stop, effectiveTimeout);
+  req.on('close', () => { clearTimeout(timer); stop(); });
 });
 
 module.exports = router;

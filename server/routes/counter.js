@@ -2,26 +2,18 @@
 const { Router } = require('express');
 const router = Router();
 
-function wErr(res, e) { res.status(e.workerError ? 502 : 503).json({ ok: false, error: e.message }); }
-function hasWorker(req) { return req.app.locals.workerHub.hasWorker(req.app.locals.localWorkerId); }
+function wErr(res, e) { res.status(503).json({ ok: false, error: e.message }); }
 
 const LINE_RE = /^(\w+)\s+\[A:\s*(0x[\dA-Fa-f]+)\s*,\s*D:\s*(0x[\dA-Fa-f]+)\]/;
 
-async function readCountersFromSerial({ localCmd, workerHub, localWorkerId, serialBridge }, portParam) {
+async function readCountersFromSerial({ serialBridge }, portParam) {
   const cmd = portParam === 'all' ? 'read_cnt' : `read_cnt ${portParam}`;
 
-  // Send the command — works for both C# worker and native serialBridge
-  if (workerHub.hasWorker(localWorkerId)) {
-    await localCmd('serialWrite', { text: cmd + '\r' }, 5000);
-  } else {
-    const sid = serialBridge.getSession(null);
-    if (!sid) throw Object.assign(new Error('Serial port not open'), { workerError: true });
-    await serialBridge.write(sid, { text: cmd + '\r' });
-  }
+  const sid = serialBridge.getSession(null);
+  if (!sid) throw Object.assign(new Error('Serial port not open'), { workerError: true });
+  await serialBridge.write(sid, { text: cmd + '\r' });
 
-  // Collect serial-rx events for up to 8 s (same regardless of source)
-  const eventSource  = workerHub.hasWorker(localWorkerId) ? workerHub.events : serialBridge.events;
-  const eventName    = workerHub.hasWorker(localWorkerId) ? `event:${localWorkerId}` : 'serial';
+  // Collect serial-rx events for up to 8 s
   const deadline     = Date.now() + 8000;
   let accumulated    = '';
   const counters     = [];
@@ -34,7 +26,7 @@ async function readCountersFromSerial({ localCmd, workerHub, localWorkerId, seri
         accumulated += Buffer.from(payload.hex, 'hex').toString('utf8');
       }
     };
-    eventSource.on(eventName, onEvent);
+    serialBridge.events.on('serial', onEvent);
 
     const tick = setInterval(() => {
       const lines = accumulated.split(/\r?\n/);
@@ -56,14 +48,14 @@ async function readCountersFromSerial({ localCmd, workerHub, localWorkerId, seri
       lastCount = counters.length;
       if (done) {
         clearInterval(tick);
-        eventSource.off(eventName, onEvent);
+        serialBridge.events.off('serial', onEvent);
         resolve();
       }
     }, 200);
 
     setTimeout(() => {
       clearInterval(tick);
-      eventSource.off(eventName, onEvent);
+      serialBridge.events.off('serial', onEvent);
       resolve();
     }, 8500);
   });

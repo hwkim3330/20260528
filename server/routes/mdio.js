@@ -106,28 +106,41 @@ router.post('/mdio/write', async (req, res) => {
 });
 
 // ── GET /api/mdio/link-status ─────────────────────────────────────────────────
-// Reads BMSR (reg 0x01) bit2 for all 6 ports
+// Reads BMSR (reg 0x01) bit2 for all 6 ports.
+// BMSR bit2 is a latch-low bit per IEEE 802.3 — must be read twice:
+// first read clears the latch, second read reflects the actual current state.
 router.get('/mdio/link-status', async (req, res) => {
   try {
     const ports = [];
-    for (let port = 0; port < 6; port++) {
-      const phyAddr = PHY_ADDRS[port];
-      const acc     = blockBase(port) + OFF_ACC;
-      // Read trigger: BMSR = reg 0x01
-      const cmd = 0x80000000 | ((phyAddr & 0x1F) << 21) | ((0x01) << 16);
-      await regWrite(req, acc, cmd);
 
+    async function readBmsr(acc, cmd) {
+      await regWrite(req, acc, cmd);
       const deadline = Date.now() + 1000;
       let raw = cmd;
-      let timedOut = false;
+      let timedOut = true;
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 50));
         raw = await regRead(req, acc);
-        if ((raw & 0x80000000) === 0) break;
-        if (Date.now() >= deadline) { timedOut = true; break; }
+        if ((raw & 0x80000000) === 0) { timedOut = false; break; }
       }
+      return timedOut ? null : (raw & 0xFFFF);
+    }
 
-      const linkUp = timedOut ? null : Boolean(raw & 0x0004);
+    for (let port = 0; port < 6; port++) {
+      const phyAddr = PHY_ADDRS[port];
+      const acc     = blockBase(port) + OFF_ACC;
+      const cmd     = 0x80000000 | ((phyAddr & 0x1F) << 21) | ((0x01) << 16);
+
+      // First read — clears latch
+      const first = await readBmsr(acc, cmd);
+      if (first === null) { ports.push({ port, linkUp: null }); continue; }
+
+      // Second read — actual current link state
+      const second = await readBmsr(acc, cmd);
+      if (second === null) { ports.push({ port, linkUp: null }); continue; }
+
+      // 0xFFFF: no PHY responded (bus pulled high) → no link
+      const linkUp = second === 0xFFFF ? false : Boolean(second & 0x0004);
       ports.push({ port, linkUp });
     }
     res.json({ ok: true, ports });

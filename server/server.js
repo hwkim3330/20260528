@@ -11,7 +11,6 @@ const { WebSocketServer } = require('ws');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
-const workerHub      = require('./services/workerHub');
 const serialBridge   = require('./services/serialBridge');
 const switchProtocol = require('./services/switchProtocol');
 const packetBackend  = require('./services/packetBackend');
@@ -20,7 +19,6 @@ const autoEngine     = require('./services/autoEngine');
 
 const app  = express();
 const PORT = Number(process.env.PORT || 8080);
-const LOCAL_WORKER = process.env.LOCAL_WORKER_ID || 'local';
 
 app.use(cors());
 app.use(express.json({ limit: '32mb' }));
@@ -33,8 +31,6 @@ const macrosDir  = path.join(logsDir, 'macros');
 const reportsDir = path.join(__dirname, 'reports');
 [logsDir, testsDir, macrosDir, reportsDir].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
-app.locals.workerHub      = workerHub;
-app.locals.localWorkerId  = LOCAL_WORKER;
 app.locals.testsDir       = testsDir;
 app.locals.macrosDir      = macrosDir;
 app.locals.reportsDir     = reportsDir;
@@ -46,18 +42,8 @@ app.locals.autoEngine     = autoEngine;
 // Initialize autoEngine with services and storage dir
 autoEngine.init({ packetBackend, serialBridge, switchProtocol }, testsDir);
 
-// Helper: send command to local worker, falls back to nativeWorker when C# is not connected
-async function localCmd(command, payload = {}, timeoutMs = 15000) {
-  if (workerHub.hasWorker(LOCAL_WORKER)) {
-    try {
-      const reply = await workerHub.sendCommand(LOCAL_WORKER, command, payload, timeoutMs);
-      if (!reply.ok) throw Object.assign(new Error(reply.error || 'Worker error'), { workerError: true });
-      return reply.data;
-    } catch (e) {
-      if (e.workerError) throw e; // worker said error — don't fall through
-    }
-  }
-  // Native fallback (Linux / headless / C# disconnected)
+// Dispatch command to native worker
+async function localCmd(command, payload = {}) {
   return nativeWorker.dispatch(command, payload, { packetBackend, serialBridge, switchProtocol });
 }
 app.locals.localCmd = localCmd;
@@ -65,19 +51,13 @@ app.locals.localCmd = localCmd;
 // Broadcast to all browser WebSocket clients
 const server = http.createServer(app);
 const wss    = new WebSocketServer({ server });
-workerHub.attach(wss);
 
 app.locals.broadcast = (msg) => {
   const raw = JSON.stringify(msg);
   wss.clients.forEach(ws => { try { ws.send(raw); } catch {} });
 };
 
-// Relay worker events (capture, serial, tabchange, …) to browser WebSocket clients
-workerHub.events.on(`event:${LOCAL_WORKER}`, (payload) => {
-  app.locals.broadcast({ type: 'workerEvent', payload });
-});
-
-// Relay native serial events to browser WebSocket clients (Linux / standalone mode)
+// Relay native serial events to browser WebSocket clients
 serialBridge.events.on('serial', (payload) => {
   app.locals.broadcast({ type: 'workerEvent', payload });
 });
@@ -205,13 +185,6 @@ app.post('/api/simple-bidir-forward-test', async (req, res) => {
   });
 });
 
-// ── worker (EthernetPacketGenerator) health check ────────────────────────────
-app.get('/api/csharp/health', (req, res) => {
-  const { workerHub, localWorkerId } = req.app.locals;
-  const connected = workerHub.hasWorker(localWorkerId);
-  res.json({ ok: connected, connected, note: 'EthernetPacketGenerator WebSocket worker' });
-});
-
 // ── routes ───────────────────────────────────────────────────────────────────
 app.use('/api/remote-capture', require('./routes/remoteCapture'));
 app.use('/api', require('./routes/health'));
@@ -222,9 +195,7 @@ app.use('/api', require('./routes/testcases'));
 app.use('/api', require('./routes/packetFlow'));
 app.use('/api', require('./routes/macro'));
 app.use('/api', require('./routes/logs'));
-app.use('/api', require('./routes/workers')(workerHub));
 app.use('/api', require('./routes/tests'));
-// ── proxy routes → EthernetPacketGenerator.exe (--local-api, port 18080) ─────
 app.use('/api', require('./routes/scenario'));
 app.use('/api', require('./routes/register'));
 app.use('/api', require('./routes/fdb'));
@@ -248,7 +219,6 @@ server.listen(PORT, '0.0.0.0', () => {
                || Object.values(nics).flat().find(e => e?.family === 'IPv4' && !e.internal && /^192\.168\./.test(e.address)))?.address;
   console.log(`[PacketLabManager] Local   : http://localhost:${PORT}`);
   if (wifiIp) console.log(`[PacketLabManager] Network : http://${wifiIp}:${PORT}`);
-  console.log(`[PacketLabManager] Worker  : ws://localhost:${PORT}/ws/worker?workerId=${LOCAL_WORKER}`);
   console.log(`[PacketLabManager] Reports : ${reportsDir}`);
   console.log(`[PacketLabManager] Serial  : ${serialBridge.isAvailable()
     ? (process.platform === 'linux' ? 'Linux TTY ready (stty fallback + serialport if installed)' : 'serialport npm ready')

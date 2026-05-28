@@ -3,22 +3,12 @@ const { Router } = require('express');
 const router = Router();
 
 function workerErr(res, err) {
-  res.status(err.workerError ? 502 : 503).json({ ok: false, error: err.message });
-}
-
-function hasWorker(req) {
-  const { workerHub, localWorkerId } = req.app.locals;
-  return workerHub.hasWorker(localWorkerId);
+  res.status(503).json({ ok: false, error: err.message });
 }
 
 // GET /api/interfaces
 router.get('/interfaces', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('getInterfaces');
-      const interfaces = data?.interfaces ?? [];
-      return res.json({ ok: true, interfaces, stdout: { interfaces } });
-    }
     const interfaces = req.app.locals.packetBackend.listInterfaces();
     res.json({ ok: true, interfaces, stdout: { interfaces } });
   } catch (err) { workerErr(res, err); }
@@ -27,17 +17,10 @@ router.get('/interfaces', async (req, res) => {
 // POST /api/build
 router.post('/build', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      try {
-        const data = await req.app.locals.localCmd('build', req.body || {});
-        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
-      } catch (e) {
-        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
-      }
-    }
-    // Linux or unsupported protocol: build frame locally and return hex
+    // Local frame builder handles all protocols including 'ipv4', 'raw', etc.
+    // _preview: true suppresses the 60-byte Ethernet minimum padding (display only)
     const { buildFrame, normalizeProfile } = require('../services/frameBuilder');
-    const frame = buildFrame(normalizeProfile(req.body || {}));
+    const frame = buildFrame(normalizeProfile({ ...(req.body || {}), _preview: true }), 0);
     const data  = { frameHex: frame.toString('hex'), frameLength: frame.length };
     res.json({ ok: true, ...data, stdout: data });
   } catch (err) { workerErr(res, err); }
@@ -46,15 +29,6 @@ router.post('/build', async (req, res) => {
 // POST /api/send
 router.post('/send', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      try {
-        const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
-        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
-      } catch (e) {
-        // C# doesn't support this protocol — fall through to native frameBuilder
-        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
-      }
-    }
     const result = await req.app.locals.packetBackend.sendPackets(req.body || {});
     res.json({ ok: true, ...result, stdout: result });
   } catch (err) { workerErr(res, err); }
@@ -63,14 +37,6 @@ router.post('/send', async (req, res) => {
 // POST /api/packet/send (alias)
 router.post('/packet/send', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      try {
-        const data = await req.app.locals.localCmd('send', req.body || {}, 30000);
-        return res.json({ ok: true, ...(data || {}), stdout: data || {} });
-      } catch (e) {
-        if (!e.workerError || !/unsupported protocol/i.test(e.message)) throw e;
-      }
-    }
     const result = await req.app.locals.packetBackend.sendPackets(req.body || {});
     res.json({ ok: true, ...result, stdout: result });
   } catch (err) { workerErr(res, err); }
@@ -117,10 +83,6 @@ router.get('/arp-lookup', async (req, res) => {
 // GET /api/worker/status
 router.get('/worker/status', async (req, res) => {
   try {
-    if (hasWorker(req)) {
-      const data = await req.app.locals.localCmd('status');
-      return res.json({ ok: true, ...(data || {}) });
-    }
     const pb = req.app.locals.packetBackend;
     const st = pb.getCaptureStatus();
     res.json({ ok: true, workerId: 'local', capturing: st.capturing, captureCount: st.captureCount,

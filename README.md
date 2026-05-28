@@ -45,11 +45,11 @@ PacketLabManager는 이더넷 네트워크 테스트를 위한 풀스택 랩 도
 
 2-PC 구성 (스위치 포워딩 테스트):
 
-  Node A (이 PC)                    Node B (상대 PC)
-  :8080 ──── HTTP API ────────────► :8080
-  enp12s0f0 ~ enp12s0f3           enp3s0f0, enp3s0f1
-        │                               │
-        └──── L2 Switch (P0~P5) ────────┘
+  Node A (169.254.88.222:8080)       Node B (169.254.1.168:8080)
+  enp12s0f0 (P0) ─┐             ┌─ enp3s0f1 (P4)
+  enp12s0f1 (P1) ─┤             ├─ enp3s0f0 (P5)
+  enp12s0f2 (P2) ─┤ L2 Switch   │
+  enp12s0f3 (P3) ─┘ (P0~P5)    ─┘
 ```
 
 ---
@@ -121,21 +121,36 @@ Base URL: `http://localhost:8080/api`
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | GET | `/interfaces` | 네트워크 인터페이스 목록 |
+| POST | `/build` | 패킷 프레임 빌드 (hex 반환) |
 | POST | `/send` | 패킷 전송 |
-| POST | `/capture/start` | 캡처 시작 (`interfaces`, `promisc`) |
+| GET | `/capture/status` | 캡처 상태 + 인터페이스 목록 |
+| POST | `/capture/start` | 캡처 시작 (`interfaces`, `bpfFilter`) |
 | POST | `/capture/stop` | 캡처 중지 |
-| GET | `/capture/packets` | 캡처된 패킷 목록 |
+| GET | `/capture/packets` | 캡처된 패킷 목록 (`?limit=&offset=`) |
 | POST | `/capture/clear` | 캡처 버퍼 초기화 |
 | POST | `/simple-bidir-forward-test` | 2-PC 양방향 포워딩 테스트 |
 | GET | `/portmap` | 포트 매핑 조회 |
 | POST | `/portmap` | 포트 매핑 저장 |
 | GET | `/tty/list` | 시리얼 포트 목록 |
-| POST | `/register/read` | 레지스터 읽기 |
-| POST | `/register/write` | 레지스터 쓰기 |
-| GET | `/fdb/table` | FDB 테이블 조회 |
-| POST | `/mdio/read` | PHY 레지스터 읽기 |
-| GET | `/counter/read` | 포트 카운터 읽기 |
-| GET | `/health` | 서버 상태 |
+| GET | `/serial/status` | 시리얼 연결 상태 |
+| POST | `/serial/connect` | 시리얼 포트 연결 (`port`, `baudRate`, ...) |
+| POST | `/serial/disconnect` | 시리얼 포트 해제 |
+| POST | `/serial/send` | 데이터 전송 (`hex` 또는 `text`) |
+| GET | `/register/status` | 레지스터 세션 상태 |
+| POST | `/register/read` | 레지스터 읽기 (`offset`) |
+| POST | `/register/write` | 레지스터 쓰기 (`offset`, `value`) |
+| POST | `/register/base-addr` | 기준 주소 설정 |
+| POST | `/fdb/read` | FDB 엔트리 조회 (`mac`, `vlanId`) |
+| POST | `/fdb/write` | FDB 엔트리 등록 |
+| POST | `/fdb/delete` | FDB 엔트리 삭제 |
+| POST | `/fdb/flush` | FDB 전체 초기화 |
+| POST | `/mdio/read` | PHY 레지스터 읽기 (`port`, `phyAddr`, `regAddr`) |
+| POST | `/mdio/write` | PHY 레지스터 쓰기 |
+| GET | `/mdio/link-status` | 6포트 링크 상태 (시리얼 필요) |
+| GET | `/counter/read` | 포트 카운터 읽기 (`?port=all\|0-5`, 시리얼 필요) |
+| GET | `/timestamp/read` | 타임스탬프 레지스터 읽기 |
+| GET | `/backend/status` | 서버·패킷·시리얼 상태 요약 |
+| GET | `/health` | 서버 헬스 체크 |
 
 ---
 

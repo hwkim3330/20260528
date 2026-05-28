@@ -1,16 +1,17 @@
 'use strict';
 
+// Mixed Korean locale (LC_NUMERIC=ko_KR etc.) causes free(): invalid pointer
+// in cap/pcap C library locale-sensitive functions at startup.
+// Force C locale for all child processes (tcpdump, stty) before any native module loads.
+// Note: this affects child processes spawned by this process; the C runtime of this
+// process itself reads locale at startup, so start.sh also sets LC_ALL=C.
+process.env.LC_ALL     = 'C';
+process.env.LC_NUMERIC = 'C';
+process.env.LC_CTYPE   = 'C';
+
 // Prevent unhandled errors from killing the process
 process.on('uncaughtException',   (err) => console.error('[FATAL uncaughtException]', err));
 process.on('unhandledRejection',  (reason) => console.error('[FATAL unhandledRejection]', reason));
-
-// cap native module occasionally triggers glibc free() abort on rapid open/close.
-// Catch SIGABRT so the crash exits cleanly instead of dumping core;
-// start.sh will restart the process automatically.
-process.on('SIGABRT', () => {
-  console.error('[PacketLabManager] Native module crash (free(): invalid pointer) — restarting...');
-  process.exit(1);
-});
 
 const express = require('express');
 const cors    = require('cors');

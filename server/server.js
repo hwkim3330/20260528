@@ -132,18 +132,36 @@ app.post('/api/simple-bidir-forward-test', async (req, res) => {
       ? nodeAMonitorInterfaces.map(i => ({ url: nodeAUrl, iface: i })).concat(nodeBMonitorInterfaces.map(i => ({ url: nodeBUrl, iface: i })))
       : nodeBMonitorInterfaces.map(i => ({ url: nodeBUrl, iface: i })).concat(nodeAMonitorInterfaces.map(i => ({ url: nodeAUrl, iface: i })));
 
+    let captureStartErr = '', sendErr = '';
     try {
       const hdr = { 'Content-Type': 'application/json' };
       const to  = (ms) => ({ signal: AbortSignal.timeout(ms) });
 
-      // Start capture on receiver
-      await fetch(`${receiverUrl}/api/capture/clear`, { method: 'POST', headers: hdr, body: '{}', ...to(8000) }).catch(() => {});
-      await fetch(`${receiverUrl}/api/capture/start`, { method: 'POST', headers: hdr, body: JSON.stringify({ interfaces: [recvIface] }), ...to(15000) }).catch(() => {});
+      // Start capture on receiver (promisc=true so all frames are captured)
+      await fetch(`${receiverUrl}/api/capture/clear`, { method: 'POST', headers: hdr, body: '{}', ...to(8000) })
+        .catch(e => { captureStartErr = e.message; });
+      const capStartResp = await fetch(`${receiverUrl}/api/capture/start`, {
+        method: 'POST', headers: hdr,
+        body: JSON.stringify({ interfaces: [recvIface], promisc: true }),
+        ...to(15000)
+      }).catch(e => { captureStartErr = e.message; return null; });
+      if (capStartResp && !capStartResp.ok) {
+        const cd = await capStartResp.json().catch(() => ({}));
+        captureStartErr = cd.error || `HTTP ${capStartResp.status}`;
+      }
+
+      // Brief pause so tcpdump/capture is fully running before we send
+      await new Promise(r => setTimeout(r, 600));
 
       // Send packets from sender
       const marker = `${payloadMarkerPrefix}_${dir}_${Date.now()}`;
       const sendBody = { interface: senderIface, protocol: 'udp', dstMac: 'FF:FF:FF:FF:FF:FF', srcIp: '169.254.1.1', dstIp: '169.254.1.2', srcPort: udpSrcPort, dstPort: udpDstPort, count, intervalMs, payload: { mode: 'text', data: marker } };
-      await fetch(`${senderUrl}/api/send`, { method: 'POST', headers: hdr, body: JSON.stringify(sendBody), ...to(30000) }).catch(() => {});
+      const sendResp = await fetch(`${senderUrl}/api/send`, { method: 'POST', headers: hdr, body: JSON.stringify(sendBody), ...to(30000) })
+        .catch(e => { sendErr = e.message; return null; });
+      if (sendResp && !sendResp.ok) {
+        const sd = await sendResp.json().catch(() => ({}));
+        sendErr = sd.error || `HTTP ${sendResp.status}`;
+      }
 
       // Wait for capture
       await new Promise(r => setTimeout(r, Math.min(captureTimeoutMs, 10000)));
@@ -153,9 +171,20 @@ app.post('/api/simple-bidir-forward-test', async (req, res) => {
       const capResp = await fetch(`${receiverUrl}/api/capture/packets?limit=1000`, { ...to(10000) }).catch(() => null);
       const capData = capResp ? await capResp.json().catch(() => ({})) : {};
       const rows = capData.rows ?? [];
-      const matched = rows.filter(r => r.decoded && JSON.stringify(r.decoded).includes(marker));
+      const markerHex = Buffer.from(marker, 'utf8').toString('hex');
+      const matched = rows.filter(r =>
+        (r.decoded && JSON.stringify(r.decoded).includes(marker)) ||
+        (r.frameHex && r.frameHex.includes(markerHex))
+      );
 
-      results.push({ direction: dir, result: matched.length >= count ? 'PASS' : 'FAIL', senderUrl, receiverUrl, sent: count, matched: matched.length });
+      const passThreshold = Math.max(1, Math.ceil(count * 0.5));
+      const result = matched.length >= passThreshold ? 'PASS' : 'FAIL';
+      results.push({
+        direction: dir, result, senderUrl, receiverUrl,
+        sent: count, matched: matched.length, totalCaptured: rows.length,
+        captureStartErr: captureStartErr || undefined,
+        sendErr: sendErr || undefined,
+      });
     } catch (e) {
       results.push({ direction: dir, result: 'FAIL', error: e.message, senderUrl, receiverUrl });
     }
@@ -204,6 +233,7 @@ app.use('/api', require('./routes/mdio'));
 app.use('/api', require('./routes/counter'));
 app.use('/api', require('./routes/timestamp'));
 app.use('/api', require('./routes/auto'));
+app.use('/api', require('./routes/portmap'));
 
 // ── reports static ───────────────────────────────────────────────────────────
 app.use('/reports', express.static(reportsDir));

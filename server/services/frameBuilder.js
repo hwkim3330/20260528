@@ -64,11 +64,14 @@ function buildUDP(p, seq) {
 }
 
 function buildICMP(p, seq) {
+  const ic   = p.icmp || {};
+  const type = ic.type ?? 8;
+  const code = ic.code ?? 0;
   const data = payloadBytes(p, seq);
   const hdr  = Buffer.alloc(8);
-  hdr[0] = 8; hdr[1] = 0; // Echo request
-  hdr.writeUInt16BE(1, 4); // identifier
-  hdr.writeUInt16BE(seq ?? 0, 6); // sequence
+  hdr[0] = type; hdr[1] = code;
+  hdr.writeUInt16BE(1, 4);
+  hdr.writeUInt16BE(seq ?? 0, 6);
   const payload = Buffer.concat([hdr, data]);
   const cs = checksum(payload);
   payload.writeUInt16BE(cs, 2);
@@ -76,16 +79,17 @@ function buildICMP(p, seq) {
 }
 
 function buildARP(p) {
-  const ip = p.ipv4 || {};
-  const b  = Buffer.alloc(28);
-  b.writeUInt16BE(0x0001, 0); // Ethernet
-  b.writeUInt16BE(0x0800, 2); // IPv4
+  const arp = p.arp || {};
+  const ip  = p.ipv4 || {};
+  const b   = Buffer.alloc(28);
+  b.writeUInt16BE(0x0001, 0); // HW type: Ethernet
+  b.writeUInt16BE(0x0800, 2); // Protocol: IPv4
   b[4] = 6; b[5] = 4;
-  b.writeUInt16BE(1, 6); // request
-  macBytes(p.srcMac).copy(b, 8);
-  ipBytes(ip.src).copy(b, 14);
-  macBytes(p.dstMac).copy(b, 18);
-  ipBytes(ip.dst).copy(b, 24);
+  b.writeUInt16BE(arp.operation ?? 1, 6);
+  macBytes(arp.senderMac || p.srcMac).copy(b, 8);
+  ipBytes(arp.senderIp   || ip.src || '0.0.0.0').copy(b, 14);
+  macBytes(arp.targetMac || p.dstMac).copy(b, 18);
+  ipBytes(arp.targetIp   || ip.dst || '0.0.0.0').copy(b, 24);
   return b;
 }
 
@@ -94,8 +98,8 @@ function buildTCP(p, seq) {
   const data   = payloadBytes(p, seq);
   const sp     = t.srcPort  ?? p.srcPort  ?? 40000;
   const dp     = t.dstPort  ?? p.dstPort  ?? 50000;
-  const seqNum = t.seq      ?? (seq != null ? seq : 0);
-  const ackNum = t.ack      ?? 0;
+  const seqNum = t.seqNum   ?? t.seq ?? (seq != null ? seq : 0);
+  const ackNum = t.ackNum   ?? t.ack ?? 0;
   // Default: PSH+ACK (0x18) when payload present, SYN (0x02) otherwise
   const flags  = t.flags    ?? (data.length > 0 ? 0x18 : 0x02);
   const win    = t.window   ?? 65535;
@@ -120,11 +124,11 @@ function buildTCP(p, seq) {
   return Buffer.concat([hdr, data]);
 }
 
-function buildIPv4(p, proto, innerPayload) {
+function buildIPv4(p, proto, innerPayload, seq) {
   const ip  = p.ipv4 || {};
   const ttl = ip.ttl ?? 64;
   const tos = ip.tos ?? 0;
-  const id  = ip.id  ?? (Math.random() * 0xFFFF | 0);
+  const id  = ip.id  ?? ((seq ?? 0) & 0xFFFF);
   const ff  = ip.flagsFragment ?? 0x4000;
   const tot = 20 + innerPayload.length;
 
@@ -158,8 +162,11 @@ function buildEthHdr(p, etherType) {
 function normalizeProfile(raw) {
   const p = JSON.parse(JSON.stringify(raw));
   if (!p.ipv4) p.ipv4 = {};
-  if (p.srcIp && !p.ipv4.src) { p.ipv4.src = p.srcIp; delete p.srcIp; }
-  if (p.dstIp && !p.ipv4.dst) { p.ipv4.dst = p.dstIp; delete p.dstIp; }
+  // Top-level flat fields → ipv4 sub-object
+  if (p.srcIp != null && p.ipv4.src == null) { p.ipv4.src = p.srcIp; delete p.srcIp; }
+  if (p.dstIp != null && p.ipv4.dst == null) { p.ipv4.dst = p.dstIp; delete p.dstIp; }
+  if (p.ttl   != null && p.ipv4.ttl == null) { p.ipv4.ttl = Number(p.ttl); delete p.ttl; }
+  if (p.tos   != null && p.ipv4.tos == null) { p.ipv4.tos = Number(p.tos); delete p.tos; }
 
   const proto = (p.protocol || 'udp').toLowerCase();
   if (proto === 'udp') {
@@ -174,25 +181,173 @@ function normalizeProfile(raw) {
   return p;
 }
 
+/**
+ * Build a frame respecting the user-defined block order in profile.blocks[].
+ *
+ * Each block contributes only its own header bytes (no inner payload bundled in).
+ * Payload blocks contribute their raw data bytes.  Transport/network headers that
+ * need to know the bytes that follow (IPv4 total-length, UDP/TCP/ICMP checksums)
+ * look ahead at the precomputed sizes and payload bytes.
+ */
+function buildFrameFromBlocks(blocks, profile, seq) {
+  // Pre-compute Payload block bytes (needed for transport checksum over real data)
+  const precomputed = blocks.map(b => {
+    if (b.type !== 'Payload') return null;
+    const mode = (b.mode || 'text').toLowerCase();
+    if (mode === 'hex') return Buffer.from((b.data || '').replace(/[:\s]/g, ''), 'hex');
+    if (mode === 'random') {
+      const len = b.length || b.size || 64;
+      const buf = Buffer.alloc(len);
+      for (let k = 0; k < len; k++) buf[k] = Math.random() * 256 | 0;
+      return buf;
+    }
+    let text = b.data || '';
+    if (seq != null) text += `_${seq}`;
+    return Buffer.from(text, 'utf8');
+  });
+
+  // Fixed header sizes per block type (each block contributes only its header)
+  const HDRSIZE = { Ethernet: 14, VLAN: 4, ARP: 28, IPv4: 20, TCP: 20, UDP: 8, ICMP: 8 };
+  const sizes = blocks.map((b, i) =>
+    b.type === 'Payload' ? precomputed[i].length : (HDRSIZE[b.type] || 0)
+  );
+
+  // Total bytes from block index `from` to end — used for length/checksum lookahead
+  const sizeFrom = (from) => sizes.slice(from).reduce((a, s) => a + s, 0);
+
+  // Bytes from block index `from` to end, using actual payload data and zero-fill
+  // for other headers (best-effort for unusual orderings)
+  const bytesFrom = (from) => Buffer.concat(
+    precomputed.slice(from).map((b, j) => b !== null ? b : Buffer.alloc(sizes[from + j]))
+  );
+
+  const parts = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const block   = blocks[i];
+    const nextType = i + 1 < blocks.length ? blocks[i + 1].type : null;
+
+    switch (block.type) {
+      case 'Ethernet': {
+        // If followed by a VLAN block, the etherType field becomes the TPID
+        const et = (nextType === 'VLAN') ? 0x8100 : parseHex(block.etherType ?? '0x0800');
+        parts.push(Buffer.concat([macBytes(block.dstMac), macBytes(block.srcMac), u16be(et)]));
+        break;
+      }
+      case 'VLAN': {
+        // VLAN contributes 4 bytes: TCI (2) + inner EtherType (2)
+        // The TPID 0x8100 is in the preceding Ethernet block's etherType field
+        const tci = ((block.priority ?? 0) << 13) | ((block.dei ? 1 : 0) << 12) | ((block.vlanId ?? 1) & 0xFFF);
+        parts.push(Buffer.concat([u16be(tci), u16be(parseHex(block.innerEtherType ?? '0x0800'))]));
+        break;
+      }
+      case 'IPv4': {
+        const ip = profile.ipv4 || {};
+        let ipProto = ip.ipProto ?? 0;
+        for (let j = i + 1; j < blocks.length; j++) {
+          if (blocks[j].type === 'UDP')  { ipProto = 17; break; }
+          if (blocks[j].type === 'TCP')  { ipProto = 6;  break; }
+          if (blocks[j].type === 'ICMP') { ipProto = 1;  break; }
+        }
+        const h = Buffer.alloc(20);
+        h[0] = 0x45; h[1] = ip.tos ?? 0;
+        h.writeUInt16BE(20 + sizeFrom(i + 1), 2);
+        h.writeUInt16BE((seq ?? 0) & 0xFFFF, 4);
+        h.writeUInt16BE(ip.flagsFragment ?? 0x4000, 6);
+        h[8] = ip.ttl ?? 64; h[9] = ipProto;
+        ipBytes(ip.src || '0.0.0.0').copy(h, 12);
+        ipBytes(ip.dst || '0.0.0.0').copy(h, 16);
+        h.writeUInt16BE(checksum(h), 10);
+        parts.push(h);
+        break;
+      }
+      case 'ARP':
+        parts.push(buildARP(profile));
+        break;
+      case 'UDP': {
+        const u = profile.udp || {};
+        const after = bytesFrom(i + 1);
+        const len   = 8 + after.length;
+        const srcIp = ipBytes(profile.ipv4?.src || '0.0.0.0');
+        const dstIp = ipBytes(profile.ipv4?.dst || '0.0.0.0');
+        const hdr   = Buffer.concat([u16be(u.srcPort ?? 40000), u16be(u.dstPort ?? 50000), u16be(len), u16be(0)]);
+        const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 17]), u16be(len)]);
+        hdr.writeUInt16BE(checksum(Buffer.concat([pseudo, hdr, after])), 6);
+        parts.push(hdr);
+        break;
+      }
+      case 'TCP': {
+        const t     = profile.tcp || {};
+        const after = bytesFrom(i + 1);
+        const hdr   = Buffer.alloc(20);
+        hdr.writeUInt16BE(t.srcPort ?? 40000, 0);
+        hdr.writeUInt16BE(t.dstPort ?? 50000, 2);
+        hdr.writeUInt32BE(t.seq ?? t.seqNum ?? 0, 4);
+        hdr.writeUInt32BE(t.ack ?? t.ackNum ?? 0, 8);
+        hdr[12] = 0x50;
+        hdr[13] = t.flags ?? (after.length > 0 ? 0x18 : 0x02);
+        hdr.writeUInt16BE(t.window ?? 65535, 14);
+        const srcIp  = ipBytes(profile.ipv4?.src || '0.0.0.0');
+        const dstIp  = ipBytes(profile.ipv4?.dst || '0.0.0.0');
+        const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 6]), u16be(20 + after.length)]);
+        hdr.writeUInt16BE(checksum(Buffer.concat([pseudo, hdr, after])), 16);
+        parts.push(hdr);
+        break;
+      }
+      case 'ICMP': {
+        const ic    = profile.icmp || {};
+        const after = bytesFrom(i + 1);
+        const hdr   = Buffer.alloc(8);
+        hdr[0] = ic.type ?? 8; hdr[1] = ic.code ?? 0;
+        hdr.writeUInt16BE(1, 4);
+        hdr.writeUInt16BE(seq ?? 0, 6);
+        hdr.writeUInt16BE(checksum(Buffer.concat([hdr, after])), 2);
+        parts.push(hdr);
+        break;
+      }
+      case 'Payload':
+        parts.push(precomputed[i]);
+        break;
+      default:
+        parts.push(Buffer.alloc(0));
+    }
+  }
+
+  let frame = Buffer.concat(parts);
+  if (!profile._preview && frame.length < 60) frame = Buffer.concat([frame, Buffer.alloc(60 - frame.length)]);
+  return frame;
+}
+
 /** Build a raw Ethernet frame from a packet profile object. Returns Buffer. */
 function buildFrame(profile, seq) {
-  const p     = normalizeProfile(profile);
+  const p = normalizeProfile(profile);
+
+  // If the client sent an ordered blocks array, build in that exact order
+  if (Array.isArray(p.blocks) && p.blocks.length > 0) {
+    return buildFrameFromBlocks(p.blocks, p, seq);
+  }
+
   const proto = (p.protocol || 'udp').toLowerCase();
 
   let frame;
   switch (proto) {
     case 'udp':
-      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 17, buildUDP(p, seq))]);
+      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 17, buildUDP(p, seq), seq)]);
       break;
     case 'icmp':
-      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 1, buildICMP(p, seq))]);
+      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 1, buildICMP(p, seq), seq)]);
       break;
     case 'tcp':
-      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 6, buildTCP(p, seq))]);
+      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, 6, buildTCP(p, seq), seq)]);
       break;
     case 'arp':
       frame = Buffer.concat([buildEthHdr(p, 0x0806), buildARP(p)]);
       break;
+    case 'ipv4': {
+      // IPv4 block present but no transport-layer block — include IPv4 header with payload
+      const ipProto = p.ipv4?.ipProto ?? p.ipv4?.proto ?? 0;
+      frame = Buffer.concat([buildEthHdr(p, 0x0800), buildIPv4(p, ipProto, payloadBytes(p, seq), seq)]);
+      break;
+    }
     case 'raw': {
       const et = parseHex(p.etherType ?? '0x88b5');
       frame = Buffer.concat([buildEthHdr(p, et), payloadBytes(p, seq)]);
@@ -202,7 +357,7 @@ function buildFrame(profile, seq) {
       throw new Error(`Unsupported protocol: ${proto}`);
   }
 
-  if (frame.length < 60) frame = Buffer.concat([frame, Buffer.alloc(60 - frame.length)]);
+  if (!p._preview && frame.length < 60) frame = Buffer.concat([frame, Buffer.alloc(60 - frame.length)]);
   const target = p.targetFrameLength;
   if (target && target > frame.length)
     frame = Buffer.concat([frame, Buffer.alloc(target - frame.length)]);

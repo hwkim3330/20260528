@@ -104,11 +104,11 @@ function populateInterfaceSelects() {
   const scSel = $('scInterface');
   if (scSel) scSel.innerHTML = _ifaceSelectOpts(scSel.value);
 
-  // per-packet interface selects (PG tab) — local only
+  // per-packet interface selects (PG tab) — local + Node B
   document.querySelectorAll('.pkt-iface-sel').forEach(sel => {
     const idx = Number(sel.dataset.idx);
     const cur = getActivePackets()[idx]?.interface || '';
-    sel.innerHTML = '<option value="">-- iface --</option>' + (state.interfaces.map(i => `<option value="${esc(i.name)}"${i.name===cur?' selected':''}>${esc(i.name)}${i.state==='up'?' ●':''}</option>`).join(''));
+    sel.innerHTML = _ifaceSelectOpts(cur);
     sel.value = cur;
   });
   // per-row interface selects (scenario sequence table) — all ifaces
@@ -142,6 +142,7 @@ function initTabs() {
       $(tab.dataset.view)?.classList.add('active');
       if (tab.dataset.view === 'hyperTermView') refreshSerialStatus();
       if (tab.dataset.view === 'packetGenView') {
+        if (!state.portmap.length) _loadPortmapSilent();
         renderPacketList();
         updateTcUI();
       }
@@ -529,8 +530,7 @@ function renderPacketList() {
       <td style="font-size:10px;color:var(--muted);">${esc(dstValue)}</td>
       <td style="font-size:10px;">${esc(protos)}</td>
       <td><select name="pkt-iface-${i}" class="pkt-iface-sel small-select" data-idx="${i}" style="width:160px;font-size:10px;">
-        <option value="">-- iface --</option>
-        ${state.interfaces.map(if_ => `<option value="${esc(if_.name)}"${pkt.interface===if_.name?' selected':''}>${esc(if_.name)}${if_.state==='up'?' ●':''}</option>`).join('')}
+        ${_ifaceSelectOpts(pkt.interface)}
       </select></td>
       <td style="font-size:10px;color:var(--accent);font-weight:600;">${esc(descText)}</td>
       <td style="font-size:10px;${resStyle}">${esc(res)}</td>
@@ -742,6 +742,11 @@ function deleteAllPackets() {
   selectPacket(-1);
   updateEstimatedTime();
   toast('All packets deleted', 'ok');
+}
+
+function _pktSendUrl(ifaceName) {
+  const entry = state.allIfaces.find(i => i.name === ifaceName && i.nodeUrl);
+  return entry ? `${entry.nodeUrl}/api/send` : '/api/send';
 }
 
 function buildPacketPayload(pkt) {
@@ -1054,7 +1059,7 @@ async function sendFrame() {
   if (!iface) { toast('Select a sender interface first', 'warn'); return; }
   try {
     const p = buildPacketPayload(pkt);
-    const data = await api('/api/send', { method:'POST', body: JSON.stringify(p) });
+    const data = await api(_pktSendUrl(iface), { method:'POST', body: JSON.stringify(p) });
     const out = data.stdout || data;
     toast(`Sent ${out.framesSent || 1} frame(s), ${out.bytesSent || '?'} bytes`, 'ok');
     pkt.status = 'Sent'; renderPacketList();
@@ -1091,7 +1096,7 @@ async function sendSelectedPackets() {
       if (!pkt.interface) { pkt.status = 'ERR'; toast(`Packet "${pkt.name}": 인터페이스 미설정`, 'bad'); renderPacketList(); continue; }
       try {
         pkt.status = 'Running'; renderPacketList();
-        await api('/api/send', { method:'POST', body: JSON.stringify(buildPacketPayload(pkt)) });
+        await api(_pktSendUrl(pkt.interface), { method:'POST', body: JSON.stringify(buildPacketPayload(pkt)) });
         pkt.status = 'Sent'; totalSent++;
       } catch (err) { pkt.status = 'ERR'; toast(`Send failed: ${err.message}`, 'bad'); }
       totalAttempts++;
@@ -1133,7 +1138,7 @@ async function sendPacketList() {
       if (!pkt.interface) { pkt.status = 'ERR'; toast(`Packet "${pkt.name}": 인터페이스 미설정`, 'bad'); renderPacketList(); continue; }
       try {
         pkt.status = 'Running'; renderPacketList();
-        await api('/api/send', { method:'POST', body: JSON.stringify(buildPacketPayload(pkt)) });
+        await api(_pktSendUrl(pkt.interface), { method:'POST', body: JSON.stringify(buildPacketPayload(pkt)) });
         pkt.status = 'Sent'; totalSent++;
       } catch (err) { pkt.status = 'ERR'; toast(`Send failed: ${err.message}`, 'bad'); }
       totalAttempts++;
@@ -4405,6 +4410,7 @@ async function init() {
     setStatus('Connected');
     await Promise.allSettled([
       refreshInterfaces(),
+      _loadPortmapSilent(),
       loadLogs(),
       refreshSerialStatus(),
       refreshRegStatus(),

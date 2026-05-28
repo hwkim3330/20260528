@@ -4,6 +4,14 @@
 process.on('uncaughtException',   (err) => console.error('[FATAL uncaughtException]', err));
 process.on('unhandledRejection',  (reason) => console.error('[FATAL unhandledRejection]', reason));
 
+// cap native module occasionally triggers glibc free() abort on rapid open/close.
+// Catch SIGABRT so the crash exits cleanly instead of dumping core;
+// start.sh will restart the process automatically.
+process.on('SIGABRT', () => {
+  console.error('[PacketLabManager] Native module crash (free(): invalid pointer) — restarting...');
+  process.exit(1);
+});
+
 const express = require('express');
 const cors    = require('cors');
 const http    = require('http');
@@ -214,11 +222,16 @@ app.use((req, res) => res.status(404).json({ ok: false, error: 'Not found' }));
 
 server.listen(PORT, '0.0.0.0', () => {
   const nics = os.networkInterfaces();
-  const wifiIp = (Object.values(nics).flat().find(e => e?.family === 'IPv4' && !e.internal && /^172\./.test(e.address))
-               || Object.values(nics).flat().find(e => e?.family === 'IPv4' && !e.internal && /^10\./.test(e.address))
-               || Object.values(nics).flat().find(e => e?.family === 'IPv4' && !e.internal && /^192\.168\./.test(e.address)))?.address;
+  const allIpv4 = Object.entries(nics || {}).flatMap(([name, entries]) =>
+    (entries || []).filter(e => e.family === 'IPv4' && !e.internal).map(e => ({ name, address: e.address }))
+  );
+  // Group: regular first, then link-local
+  const regular   = allIpv4.filter(e => !/^169\.254\./.test(e.address));
+  const linkLocal = allIpv4.filter(e =>  /^169\.254\./.test(e.address));
+
   console.log(`[PacketLabManager] Local   : http://localhost:${PORT}`);
-  if (wifiIp) console.log(`[PacketLabManager] Network : http://${wifiIp}:${PORT}`);
+  for (const { name, address } of regular)   console.log(`[PacketLabManager] Network : http://${address}:${PORT}  (${name})`);
+  for (const { name, address } of linkLocal) console.log(`[PacketLabManager] Link-Local: http://${address}:${PORT}  (${name})`);
   console.log(`[PacketLabManager] Reports : ${reportsDir}`);
   console.log(`[PacketLabManager] Serial  : ${serialBridge.isAvailable()
     ? (process.platform === 'linux' ? 'Linux TTY ready (stty fallback + serialport if installed)' : 'serialport npm ready')

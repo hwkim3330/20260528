@@ -40,7 +40,7 @@ router.post('/packet-flow/result', (req, res) => {
 
     if (testId) runningTests.delete(testId);
 
-    req.app.locals.broadcast?.({ type: 'packet-flow-result', data: record });
+    req.app.locals.broadcast && req.app.locals.broadcast({ type: 'packet-flow-result', data: record });
 
     res.json({ ok: true, saved: true, filename });
   } catch (err) {

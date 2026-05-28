@@ -13,19 +13,42 @@ let BASE_ADDRESS = 0x44A00000;
 function hex8(n)  { return '0x' + (n >>> 0).toString(16).toUpperCase().padStart(8, '0'); }
 function parseHex(s) { return parseInt(String(s ?? '0').replace(/^0x/i, ''), 16) || 0; }
 
+/**
+ * 절대 주소(>= BASE_ADDRESS)와 상대 오프셋을 모두 허용.
+ * TC.csv 등에서 0x44A00080 같은 절대 주소가 오면 그대로 사용하고,
+ * 레지스터 뷰어에서 0x030 같은 작은 오프셋이 오면 BASE_ADDRESS를 더한다.
+ */
+function resolveAddr(val) {
+  const v = parseHex(val);
+  return v >= BASE_ADDRESS ? (v >>> 0) : ((BASE_ADDRESS + v) >>> 0);
+}
+
 // ── Register primitives ────────────────────────────────────────────────────────
 
 async function readRegister(session, offset) {
-  const addr = (BASE_ADDRESS + parseHex(offset)) >>> 0;
+  const addr = (BASE_ADDRESS + offset) >>> 0;
   const resp = await serialBridge.command(session, `read ${hex8(addr)}`, 3000);
-  // resp is the text after "OK " e.g. "0xDEADBEEF"
   return parseHex(resp);
 }
 
 async function writeRegister(session, offset, value) {
-  const addr = (BASE_ADDRESS + parseHex(offset)) >>> 0;
-  const val  = (value >>> 0);
-  await serialBridge.command(session, `write ${hex8(addr)} ${hex8(val)}`, 3000);
+  const addr = (BASE_ADDRESS + offset) >>> 0;
+  await serialBridge.command(session, `write ${hex8(addr)} ${hex8(value >>> 0)}`, 3000);
+}
+
+async function readAbsolute(session, addr) {
+  const cmd = `read ${hex8(addr >>> 0)}`;
+  console.log(`[serial →] ${cmd}  (session=${session})`);
+  const resp = await serialBridge.command(session, cmd, 3000);
+  console.log(`[serial ←] ${resp}`);
+  return parseHex(resp);
+}
+
+async function writeAbsolute(session, addr, value) {
+  const cmd = `write ${hex8(addr >>> 0)} ${hex8(value >>> 0)}`;
+  console.log(`[serial →] ${cmd}  (session=${session})`);
+  await serialBridge.command(session, cmd, 3000);
+  console.log(`[serial ←] OK`);
 }
 
 // ── Public: register API (offset relative to BASE_ADDRESS) ────────────────────
@@ -36,18 +59,18 @@ async function registerStatus() {
 }
 
 async function registerRead(payload) {
-  const sid    = serialBridge.getSession(payload.session);
-  const offset = parseHex(payload.offset ?? payload.address ?? '0');
-  const value  = await readRegister(sid, offset);
-  return { value: hex8(value), raw: value, offset: hex8(offset) };
+  const sid  = serialBridge.getSession(payload.session);
+  const addr = resolveAddr(payload.offset ?? payload.address ?? '0');
+  const value = await readAbsolute(sid, addr);
+  return { value: hex8(value), raw: value, offset: hex8(addr) };
 }
 
 async function registerWrite(payload) {
-  const sid    = serialBridge.getSession(payload.session);
-  const offset = parseHex(payload.offset ?? payload.address ?? '0');
-  const value  = parseHex(payload.value ?? '0');
-  await writeRegister(sid, offset, value);
-  return { ok: true, offset: hex8(offset), value: hex8(value) };
+  const sid   = serialBridge.getSession(payload.session);
+  const addr  = resolveAddr(payload.offset ?? payload.address ?? '0');
+  const value = parseHex(payload.value ?? '0');
+  await writeAbsolute(sid, addr, value);
+  return { ok: true, offset: hex8(addr), value: hex8(value) };
 }
 
 // ── FDB register offsets ───────────────────────────────────────────────────────
@@ -84,14 +107,23 @@ function parseMac(mac) {
 
 function macToWords(mac) {
   const b = parseMac(mac);
-  const lo = (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0;
-  const hi = (b[4] | (b[5] << 8)) >>> 0;
+  // Hardware layout: MAC0 = b[2..5] big-endian, MAC1 = b[0..1] big-endian
+  const lo = ((b[2] << 24) | (b[3] << 16) | (b[4] << 8) | b[5]) >>> 0;
+  const hi = ((b[0] << 8) | b[1]) >>> 0;
   return { lo, hi };
 }
 
 function wordsToMac(lo, hi) {
-  const b = [lo & 0xFF, (lo >> 8) & 0xFF, (lo >> 16) & 0xFF, (lo >> 24) & 0xFF,
-             hi & 0xFF, (hi >> 8) & 0xFF];
+  // lo = RD_MAC0|(RD_MAC1<<16): b[5]|b[4]<<8|b[3]<<16|b[2]<<24
+  // hi = RD_MAC2&0xFFFF:        b[0]<<8|b[1]
+  const b = [
+    (hi >> 8) & 0xFF,
+    hi & 0xFF,
+    (lo >> 24) & 0xFF,
+    (lo >> 16) & 0xFF,
+    (lo >> 8) & 0xFF,
+    lo & 0xFF,
+  ];
   return b.map(x => x.toString(16).padStart(2, '0')).join(':');
 }
 
@@ -117,7 +149,7 @@ async function fdbRead(payload) {
   const sid     = serialBridge.getSession(payload.session);
   const mac     = payload.mac || '00:00:00:00:00:00';
   const vlanId  = payload.vlanId ?? 0;
-  const valid   = vlanId > 0;
+  const valid   = payload.vlanValid ?? (vlanId > 0);
 
   await setMacAddress(sid, mac);
   await writeRegister(sid, FDB.OFF_MCU_VLAN,
@@ -148,16 +180,13 @@ async function fdbWrite(payload) {
   const mac    = payload.mac || '00:00:00:00:00:00';
   const port   = payload.port ?? 0;
   const vlanId = payload.vlanId ?? 0;
-  const valid  = vlanId > 0;
-  const isStatic = payload.static ?? true;
+  const valid  = payload.vlanValid ?? (vlanId > 0);
 
   await setMacAddress(sid, mac);
   await writeRegister(sid, FDB.OFF_MCU_VLAN,
     (valid ? 0x1000 : 0) | (vlanId & 0xFFF));
   await writeRegister(sid, FDB.OFF_MCU_PORT, port & 0x1FF);
-  if (isStatic) await writeRegister(sid, FDB.OFF_MCU_BUCKET, 0x000F0000); // slot bitmap
-  await writeRegister(sid, FDB.OFF_MCU_CMD,
-    isStatic ? CMD.WRITE_BUCKET : CMD.HASH_WRITE);
+  await writeRegister(sid, FDB.OFF_MCU_CMD, CMD.HASH_WRITE);
 
   await pollStatus(sid, 0x4, 500); // STATUS_WR_MAC
   return { ok: true };
@@ -191,9 +220,56 @@ async function fdbFlush(payload) {
   throw new Error('FDB flush timeout');
 }
 
+// ── FdbReadBucket: bucket 인덱스로 특정 슬롯 항목 읽기 ──────────────────────────
+async function fdbReadBucket(payload) {
+  const sid    = serialBridge.getSession(payload?.session);
+  const bucket = payload.bucket ?? 0;
+  const slot   = payload.slot   ?? 0;   // 슬롯 비트마스크 (0x1, 0x2, 0x4, 0x8)
+
+  await writeRegister(sid, FDB.OFF_MCU_BUCKET, bucket & 0x3FF);
+  await writeRegister(sid, FDB.OFF_MCU_CMD, CMD.READ_BUCKET);
+
+  const st = await pollStatus(sid, 0x1, 500); // STATUS_RD_MAC
+  const port  = await readRegister(sid, FDB.OFF_RD_PORT);
+  const flags = await readRegister(sid, FDB.OFF_RD_FLAGS);
+  const mac0  = await readRegister(sid, FDB.OFF_RD_MAC0);
+  const mac1  = await readRegister(sid, FDB.OFF_RD_MAC1);
+  const mac2  = await readRegister(sid, FDB.OFF_RD_MAC2);
+  const rdMac = wordsToMac((mac0 | (mac1 << 16)) >>> 0, mac2 & 0xFFFF);
+
+  return {
+    found:  !!(flags & 0x8000),
+    mac:    rdMac,
+    port:   port & 0x1FF,
+    bucket: bucket,
+    slot:   slot,
+    static: !!(flags & 0x4000),
+  };
+}
+
+async function fdbWriteBucket(payload) {
+  const sid    = serialBridge.getSession(payload.session);
+  const mac    = payload.mac || '00:00:00:00:00:00';
+  const port   = payload.port ?? 0;
+  const vlanId = payload.vlanId ?? 0;
+  const valid  = payload.vlanValid ?? (vlanId > 0);
+  const bucket = payload.bucket ?? 0;
+  const slot   = payload.slot   ?? 0x1;  // 슬롯 비트마스크 (0x1~0xF)
+
+  await setMacAddress(sid, mac);
+  await writeRegister(sid, FDB.OFF_MCU_VLAN,
+    (valid ? 0x1000 : 0) | (vlanId & 0xFFF));
+  await writeRegister(sid, FDB.OFF_MCU_PORT, port & 0x1FF);
+  await writeRegister(sid, FDB.OFF_MCU_BUCKET, ((slot & 0xF) << 16) | (bucket & 0x3FF));
+  await writeRegister(sid, FDB.OFF_MCU_CMD, CMD.WRITE_BUCKET);
+
+  await pollStatus(sid, 0x4, 500); // STATUS_WR_MAC
+  return { ok: true, bucket: bucket & 0x3FF, slot: slot & 0xF };
+}
+
 module.exports = {
   registerStatus, registerRead, registerWrite,
-  fdbRead, fdbWrite, fdbDelete, fdbFlush,
+  fdbRead, fdbWrite, fdbWriteBucket, fdbDelete, fdbFlush, fdbReadBucket,
   readRegister, writeRegister,
   setBaseAddress(addr) { BASE_ADDRESS = parseHex(addr); },
 };

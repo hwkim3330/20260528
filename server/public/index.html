@@ -1,34 +1,18 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ethernet Packet Generator &amp; TSN Switch Inspector</title>
+  <title>Ethernet Packet Generator</title>
   <link rel="icon" type="image/png" href="/keti.png">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=20260527f">
 </head>
 <body>
 <div id="toastTray" class="toast-tray" aria-live="polite"></div>
 
 <div class="shell">
 
-  <!-- Titlebar -->
-  <header class="titlebar">
-    <div class="brand">
-      <div class="logo-box"><img src="/keti.png" alt="KETI"></div>
-      <div>
-        <div class="brand-title">Ethernet Packet Generator &amp; TSN Switch Inspector</div>
-        <div class="brand-sub">KETI Packet Lab Manager &nbsp;|&nbsp; http://localhost:8080</div>
-      </div>
-    </div>
-    <div class="server-status">
-      <span id="serverState" class="state-dot"></span>
-      <span id="status">Connecting...</span>
-      <a href="/index-light.html" style="color:var(--tab-dim);font-size:11px;text-decoration:none;margin-left:10px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;" title="라이트 테마로 전환">☀️ Light</a>
-    </div>
-  </header>
-
-  <!-- Tab Navigation — mirrors WPF MainWindow tabs exactly -->
+  <!-- Tab Bar -->
   <nav class="tabbar" aria-label="Main views">
     <button class="tab active" data-view="packetGenView">  Packet Generator  </button>
     <button class="tab" data-view="scenarioView">  Scenario Lab  </button>
@@ -39,258 +23,313 @@
 
   <div class="content">
 
-    <!-- ══ Packet Generator ════════════════════════════════════════ -->
+    <!-- ══ TAB 0: Packet Generator ═══════════════════════════════════════════ -->
     <section id="packetGenView" class="view active">
-
-      <aside class="panel" style="width:220px;">
-        <div class="panel-header">
-          <h2>Interfaces</h2>
-          <button id="refreshAll" class="small">Refresh</button>
-        </div>
-        <div class="panel-body">
-          <div id="senderInterfaces" class="chip-list"></div>
-        </div>
-      </aside>
-
-      <div class="main-area">
-        <div class="panel-header" style="border-left:1px solid var(--border);">
-          <h2>Frame Builder</h2>
-          <div style="display:flex;gap:6px;">
-            <button id="build" class="small">Preview</button>
-            <button id="send" class="primary">Send Packet</button>
-          </div>
-        </div>
-
-        <div class="form-grid" style="overflow-y:auto; flex:1; min-height:0;">
-          <div class="field">
-            <label>Protocol</label>
-            <select id="protocol">
-              <option value="udp">UDP over IPv4</option>
-              <option value="icmp">ICMP Echo</option>
-              <option value="arp">ARP</option>
-              <option value="raw">Raw EtherType</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Destination MAC</label>
-            <input id="dstMac" value="ff:ff:ff:ff:ff:ff">
-          </div>
-          <div class="field">
-            <label>Source MAC</label>
-            <input id="srcMac" placeholder="auto from NIC">
-          </div>
-          <div class="field">
-            <label>Source IP</label>
-            <input id="srcIp" value="192.168.1.10">
-          </div>
-          <div class="field">
-            <label>Destination IP</label>
-            <input id="dstIp" value="192.168.1.20">
-          </div>
-          <div class="field">
-            <label>Src Port</label>
-            <input id="srcPort" type="number" min="1" max="65535" value="12345">
-          </div>
-          <div class="field">
-            <label>Dst Port</label>
-            <input id="dstPort" type="number" min="1" max="65535" value="50000">
-          </div>
-          <div class="field">
-            <label>Count</label>
-            <input id="count" type="number" min="1" value="1">
-          </div>
-          <div class="field">
-            <label>Interval (ms)</label>
-            <input id="intervalMs" type="number" min="0" value="0">
-          </div>
-          <div class="field span-2">
-            <label>Payload</label>
-            <textarea id="payload" rows="2">Hello KETI</textarea>
-          </div>
-          <div class="field check">
-            <input id="vlanEnabled" type="checkbox">
-            <label style="margin:0;">802.1Q VLAN</label>
-          </div>
-          <div class="field">
-            <label>VLAN ID</label>
-            <input id="vlanId" type="number" min="0" max="4095" value="100">
-          </div>
-          <div class="field">
-            <label>PCP</label>
-            <input id="vlanPriority" type="number" min="0" max="7" value="0">
-          </div>
-        </div>
-
-        <div class="preview-split">
-          <div class="preview-pane">
-            <div class="preview-head">Decoded Preview</div>
-            <pre id="decoded">No preview.</pre>
-          </div>
-          <div class="preview-pane">
-            <div class="preview-head">Frame Bytes</div>
-            <pre id="hexdump">No preview.</pre>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ══ Scenario Lab ════════════════════════════════════════════ -->
-    <section id="scenarioView" class="view">
-      <div class="scenario-layout">
-
-        <!-- Left: Test Suites -->
-        <aside class="panel">
-          <div class="panel-header">
-            <h2>Test Suites</h2>
-            <button id="tcRefresh" class="small">Refresh</button>
-          </div>
-          <div class="panel-body">
-            <div class="field" style="margin-bottom:6px;">
-              <input id="tcGroupName" placeholder="Group name">
+      <!-- Col0: main area -->
+      <div class="pg-main">
+        <!-- Row0: builder area (top) -->
+        <div class="pg-top">
+          <!-- Left col: BlockBuilder + ProtocolSettings -->
+          <div class="pg-left-col">
+            <!-- BlockBuilderView (90px) -->
+            <div class="pg-struct">
+              <div class="panel-header">
+                <span class="ph-title">PACKET STRUCTURE</span>
+              </div>
+              <div class="block-builder-area">
+                <div id="blockList" class="block-list"></div>
+              </div>
+              <div id="blockValidation" class="block-validation"></div>
             </div>
-            <button id="tcAddGroup" class="small" style="width:100%;margin-bottom:10px;">Add Group</button>
-            <div id="tcTree"></div>
-          </div>
-        </aside>
-
-        <!-- Middle: Sequence + Register/FDB + Terminal -->
-        <div class="scenario-middle">
-
-          <div class="panel-header">
-            <h2 id="scenarioTitle">Test Sequence</h2>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <input id="tcName" placeholder="TC name" style="width:120px;">
-              <button id="tcAdd" class="small">Add TC</button>
-              <button id="tcSaveCurrent" class="small primary">Save</button>
-              <button id="seqRun" class="small primary" style="background:var(--green,#44cc77);border-color:var(--green,#44cc77);">▶ Run</button>
-              <button id="seqClear" class="small danger">✕ Clear</button>
-              <button id="seqLoad" class="small">↻ Load</button>
+            <!-- Splitter -->
+            <div class="h-splitter"></div>
+            <!-- ProtocolSettingsView -->
+            <div class="pg-fields">
+              <div class="panel-header">
+                <span class="ph-title" id="fieldsTitle">PROTOCOL FIELDS</span>
+              </div>
+              <div id="protoFieldsBody" class="proto-fields-body"></div>
             </div>
           </div>
-
-          <div style="flex:1;overflow:auto;min-height:0;">
+          <!-- Vertical splitter -->
+          <div class="v-splitter" id="pgMidSplitter"></div>
+          <!-- Right col: HexDump + TreeDecode -->
+          <div class="pg-right-col">
+            <!-- HexDumpView (160px) -->
+            <div class="pg-hexdump">
+              <div class="panel-header">
+                <span class="ph-title">HEX DUMP</span>
+              </div>
+              <pre id="hexdump" class="hexdump-pre"><span style="color:var(--muted)">No preview.</span></pre>
+            </div>
+            <!-- Splitter -->
+            <div class="h-splitter"></div>
+            <!-- TreeDecodeView -->
+            <div class="pg-decode">
+              <div class="panel-header">
+                <span class="ph-title">DECODE TREE</span>
+              </div>
+              <div id="decodeTree" class="decode-tree"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Horizontal splitter -->
+        <div class="h-splitter" id="pgBottomSplitter"></div>
+        <!-- Row2: PacketListView (320px) -->
+        <div class="pg-packet-list">
+          <div class="panel-header">
+            <span class="ph-title">PACKET LIST</span>
+            <div class="ph-actions">
+              <button id="pgTcBtn" class="small" title="Load packets from TC CSV">TC 선택 ▾</button>
+              <button id="pgTcClose" class="small danger" title="Clear TC packets" style="display:none;">✕ TC</button>
+              <button id="pgAddPacket" class="small">Add Packet</button>
+              <button id="pgDelPacket" class="small" title="체크된 패킷 삭제">−</button>
+              <button id="pgUpPacket" class="small">↑</button>
+              <button id="pgDownPacket" class="small">↓</button>
+              <button id="pgDupPacket" class="small">⧉</button>
+              <div class="spacer"></div>
+              <button id="pgSendSelected" class="small">▶ Send Selected</button>
+              <button id="pgSendList" class="small primary">▶▶ Send List</button>
+              <span id="pgSpinner" class="spinner" style="display:none;"></span>
+              <label class="check-inline"><input id="pgRepeat" type="checkbox"> Repeat</label>
+              <span class="muted-label">주기(ms):</span>
+              <input id="pgPeriod" type="number" min="0" value="0" style="width:65px;" title="패킷 간 전송 간격 (ms)">
+            </div>
+          </div>
+          <div class="table-area">
             <table>
               <thead>
-                <tr><th>#</th><th>Type</th><th>Parameters</th><th style="width:30px;"></th></tr>
+                <tr>
+                  <th style="width:22px;"><input type="checkbox" id="pgSelectAll"></th>
+                  <th style="width:46px;">Index</th>
+                  <th style="width:120px;">Name</th>
+                  <th style="width:150px;">Src / Target</th>
+                  <th style="width:150px;">Dst / Value</th>
+                  <th style="width:190px;">Protocol / Params</th>
+                  <th style="width:180px;">Interface</th>
+                  <th style="width:220px;">Description</th>
+                  <th style="width:72px;">Result</th>
+                </tr>
               </thead>
-              <tbody id="sequenceRows">
-                <tr><td colspan="4" class="empty">No sequence loaded.</td></tr>
+              <tbody id="packetListRows">
+                <tr><td colspan="9" class="empty">No packets. Click "Add Packet".</td></tr>
               </tbody>
             </table>
           </div>
+          <div class="pkt-stats" id="pgStats"><span id="pgStatsText">시작: — | 종료: — | 주기: — | 전송: 0 pkts</span></div>
+        </div>
+      </div>
+      <!-- Col2: ProtocolPaletteView (180px) -->
+      <div class="pg-palette">
+        <div class="panel-header">
+          <span class="ph-title">PROTOCOLS</span>
+        </div>
+        <div class="palette-list">
+          <div class="palette-proto" draggable="true" data-proto="Ethernet" title="Ethernet II Frame Header">Ethernet</div>
+          <div class="palette-proto" draggable="true" data-proto="ARP" title="Address Resolution Protocol">ARP</div>
+          <div class="palette-proto" draggable="true" data-proto="IPv4" title="Internet Protocol v4">IPv4</div>
+          <div class="palette-proto" draggable="true" data-proto="ICMP" title="Internet Control Message Protocol">ICMP</div>
+          <div class="palette-proto" draggable="true" data-proto="TCP" title="Transmission Control Protocol">TCP</div>
+          <div class="palette-proto" draggable="true" data-proto="UDP" title="User Datagram Protocol">UDP</div>
+          <div class="palette-proto" draggable="true" data-proto="VLAN" title="802.1Q VLAN Tag">VLAN</div>
+          <div class="palette-proto" draggable="true" data-proto="Payload" title="Raw byte payload">Payload</div>
+        </div>
+      </div>
+    </section>
 
-          <!-- Register + FDB -->
-          <div class="card-row" style="border-top:1px solid var(--border); max-height:220px; overflow-y:auto;">
-            <div class="card">
-              <h3>Raw Register Access</h3>
-              <p id="regStatus" style="font-size:10px;color:var(--muted);margin-bottom:6px;">Checking...</p>
-              <div class="field"><label>Offset</label><input id="regOffset" value="0x0000"></div>
-              <div class="field"><label>Value</label><input id="regValue" value="0x00000000"></div>
-              <div class="row">
-                <button id="regRead" class="small primary">Read</button>
-                <button id="regWrite" class="small">Write</button>
-                <button id="regStatusRefresh" class="small">Status</button>
-              </div>
-              <div class="mini-log" id="regResult">No register op yet.</div>
-            </div>
-            <div class="card">
-              <h3>FDB Entry Control</h3>
-              <div class="field"><label>MAC</label><input id="fdbMac" value="00:11:22:33:44:55"></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                <div class="field"><label>Port</label><input id="fdbPort" type="number" value="1" min="0"></div>
-                <div class="field"><label>VLAN ID</label><input id="fdbVlanId" type="number" value="0" min="0" max="4095"></div>
-              </div>
-              <div class="field check" style="margin:4px 0;">
-                <input id="fdbVlanValid" type="checkbox">
-                <label style="margin:0;">VLAN valid</label>
-              </div>
-              <div class="row">
-                <button id="fdbRead" class="small primary">Read</button>
-                <button id="fdbWrite" class="small">Write</button>
-                <button id="fdbDelete" class="small danger">Delete</button>
-                <button id="fdbFlush" class="small danger">Flush All</button>
-              </div>
-              <div class="mini-log" id="fdbResult">No FDB op yet.</div>
+    <!-- ══ TAB 1: Scenario Lab ════════════════════════════════════════════════ -->
+    <section id="scenarioView" class="view">
+      <div class="sc-layout">
+
+        <!-- Panel 1: TEST CASES (CSV tree, 280px) -->
+        <div class="sc-tree-panel">
+          <div class="panel-header">
+            <span class="ph-title">TEST CASES</span>
+            <div class="ph-actions">
+              <label class="check-inline" title="Select all"><input type="checkbox" id="csvSelectAll"> All</label>
+              <button id="tcUploadBtn" class="small" title="Upload CSV files">📤 Upload</button>
+              <button id="tcReloadCsv" class="small" title="Reload CSV files">↻</button>
             </div>
           </div>
+          <!-- Upload sub-panel -->
+          <div id="tcUploadPanel" class="tc-upload-panel" style="display:none;">
+            <div class="tc-upload-row">
+              <span class="muted-label" style="white-space:nowrap;">폴더:</span>
+              <select id="tcUploadFolder" class="small-select" style="flex:1;"></select>
+            </div>
+            <div class="tc-upload-row">
+              <input id="tcUploadFileInput" type="file" accept=".csv" multiple style="display:none;">
+              <button id="tcUploadPickBtn" class="small" style="flex:1;">📂 파일 선택…</button>
+              <button id="tcUploadDoBtn" class="small primary" style="flex:1;" disabled>📤 업로드</button>
+            </div>
+            <div id="tcUploadFileList" class="tc-upload-filelist"></div>
+          </div>
+          <div id="csvTree" class="csv-tree"></div>
+          <div class="sc-tree-footer">
+            <button id="scSaveCsv" class="small primary" style="width:100%;">💾 Save</button>
+          </div>
+        </div>
 
-          <!-- Terminal (shared with scenario) -->
-          <div class="terminal-wrap" style="border-top:1px solid var(--border); flex:0 0 180px; min-height:180px;">
+        <!-- Arrow column (40px) -->
+        <div class="sc-arrow-col">
+          <button id="tcAddToSeq" class="sc-arrow-btn" title="Add selected TC to sequence">›</button>
+        </div>
+
+        <!-- Panel 3: TEST SEQUENCE (TC names list, 260px) -->
+        <div class="sc-seq-panel">
+          <div class="panel-header">
+            <span class="ph-title">TEST SEQUENCE</span>
+            <div class="ph-actions">
+              <button id="seqRun" class="small" style="background:var(--green);border-color:var(--green);color:#000;">▶ Run Seq</button>
+              <button id="seqReset" class="small">↺ Reset</button>
+              <span id="seqRunSpinner" class="spinner" style="display:none;"></span>
+            </div>
+          </div>
+          <div id="tcSeqList" class="tc-seq-list">
+            <div style="color:var(--muted);font-size:10px;padding:12px;">No TC queued. Select on the left and press ›.</div>
+          </div>
+        </div>
+
+        <!-- Panel 4: TEST SEQUENCE - Scenario Name (flex:1) -->
+        <div class="sc-detail-panel">
+          <!-- Left: title + toolbar + sequence table -->
+          <div class="sc-seq-area">
             <div class="panel-header">
-              <h2>TERMINAL</h2>
+              <span class="ph-title" id="scDetailTitle">TEST SEQUENCE — (select a TC)</span>
+            </div>
+            <div class="sc-csv-toolbar">
+              <button id="scRowAdd"  class="small" title="패킷 추가">＋</button>
+              <button id="scRowDel"  class="small" title="패킷 삭제">−</button>
+              <button id="scRowDup"  class="small" title="패킷 복제">⧉</button>
+              <button id="scRowUp"   class="small" title="위로 이동">↑</button>
+              <button id="scRowDown" class="small" title="아래로 이동">↓</button>
+              <span class="toolbar-sep"></span>
+              <label class="check-inline"><input id="scRepeat" type="checkbox"> Repeat</label>
+              <label class="check-inline"><input id="scFailIgnore" type="checkbox"> Fail 무시</label>
+              <div class="spacer"></div>
+              <button id="scSendSelected" class="small">▶ Send Selected</button>
+              <span id="scSelSpinner" class="spinner" style="display:none;"></span>
+              <button id="scSendList" class="small primary">▶▶ Send List</button>
+              <span id="scListSpinner" class="spinner" style="display:none;"></span>
+              <span id="scStats" class="muted-label" style="margin-left:4px;">S: — | E: —</span>
+            </div>
+            <div class="table-area" id="scTableArea">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:22px;"><input type="checkbox" id="scSeqSelectAll"></th>
+                    <th style="width:36px;">Index</th>
+                    <th style="width:140px;">Name</th>
+                    <th style="width:130px;">EventType</th>
+                    <th style="width:150px;">MAC</th>
+                    <th style="width:180px;">Details</th>
+                    <th style="width:130px;">Interface</th>
+                    <th style="width:60px;">Result</th>
+                  </tr>
+                </thead>
+                <tbody id="sequenceRows"></tbody>
+              </table>
+              <div id="scSeqDropEnd" class="tc-seq-drop-end"></div>
+            </div>
+          </div>
+          <!-- Right: Terminal (vertical column) -->
+          <div class="sc-terminal">
+            <div class="panel-header">
+              <span class="ph-title">TERMINAL</span>
               <button id="clearSeqTerminal" class="small">Clear</button>
             </div>
-            <div id="seqTermOutput" class="terminal-output">No output.</div>
+            <div id="seqTerminal" class="terminal-output">No output.</div>
             <div class="terminal-input">
               <span>&gt;</span>
-              <input id="seqTermInput" placeholder="Type command...">
-              <button id="seqTermSend" class="small primary">전송</button>
+              <input id="seqTermInput" placeholder="Send serial command...">
+              <button id="seqTermSend" class="small primary">Send</button>
             </div>
           </div>
         </div>
 
-        <!-- Right: Event Palette -->
-        <aside class="event-palette">
-          <div class="panel-header"><h2>Events</h2></div>
-          <div style="overflow-y:auto;flex:1;">
-            <div class="palette-item" data-event="Delay">⏱ Delay</div>
-            <div class="palette-item" data-event="RegWrite">✏ RegWrite</div>
-            <div class="palette-item" data-event="RegRead">📖 RegRead</div>
-            <div class="palette-item" data-event="RegVerify">✔ RegVerify</div>
-            <div class="palette-item" data-event="FdbWrite">📝 FdbWrite</div>
-            <div class="palette-item" data-event="FdbRead">🔍 FdbRead</div>
-            <div class="palette-item" data-event="FdbFlush">🗑 FdbFlush</div>
-            <div class="palette-item" data-event="RxVerify">📡 RxVerify</div>
+        <!-- RIGHT: Event palette -->
+        <div class="sc-event-panel" id="scEventPanel">
+          <div class="panel-header">
+            <span class="ph-title">EVENTS</span>
           </div>
-        </aside>
+          <div class="palette-list">
+            <div class="palette-item ev-pal-delay"        draggable="true" data-event="Delay">⏱ Delay</div>
+            <div class="palette-item ev-pal-regwrite"     draggable="true" data-event="RegWrite">✎ RegWrite</div>
+            <div class="palette-item ev-pal-regread"      draggable="true" data-event="RegRead">⤷ RegRead</div>
+            <div class="palette-item ev-pal-regverify"    draggable="true" data-event="RegVerify">✔ RegVerify</div>
+            <div class="palette-item ev-pal-fdb"          draggable="true" data-event="FdbWrite">📋 FdbWrite</div>
+            <div class="palette-item ev-pal-fdb"          draggable="true" data-event="FdbWriteBucket">📋 FdbWriteBucket</div>
+            <div class="palette-item ev-pal-fdb"          draggable="true" data-event="FdbRead">🔍 FdbRead</div>
+            <div class="palette-item ev-pal-fdb"          draggable="true" data-event="FdbReadBucket">🔍 FdbReadBucket</div>
+            <div class="palette-item ev-pal-fdbinitialize" draggable="true" data-event="FdbInitialize">🗑 FdbInitialize</div>
+            <div class="palette-item ev-pal-rxverify"     draggable="true" data-event="RxVerify">📥 RxVerify</div>
+          </div>
+          <div id="eventEditor" class="event-editor">
+            <div class="event-editor-title" id="eventEditorTitle">Select an event</div>
+            <div id="eventEditorFields" class="event-editor-fields"></div>
+            <div class="event-editor-foot">
+              <button id="addToSequence" class="small primary" style="width:100%;" disabled>Add to Sequence</button>
+            </div>
+          </div>
+        </div>
 
       </div>
     </section>
 
-    <!-- ══ Capture ══════════════════════════════════════════════════ -->
+    <!-- ══ TAB 2: Capture ════════════════════════════════════════════════════ -->
     <section id="captureView" class="view">
-
-      <aside class="panel" style="width:220px;">
+      <!-- Left: Interface panel (200px) -->
+      <div class="cap-iface-panel panel" id="capIfacePanel">
         <div class="panel-header">
-          <h2>Interfaces</h2>
-          <button id="captureRefresh" class="small">Refresh</button>
+          <span class="ph-title">INTERFACES</span>
+          <div class="ph-actions">
+            <button id="captureRefresh" class="small" title="Refresh">↻</button>
+            <button id="ifaceToggle" class="small" title="Collapse">◀</button>
+          </div>
         </div>
         <div class="panel-body">
           <div id="captureInterfaces" class="check-list" style="margin-bottom:10px;"></div>
-          <button id="captureStart" class="primary" style="width:100%;margin-bottom:5px;">▶ Start</button>
-          <button id="captureStop" class="danger" style="width:100%;margin-bottom:5px;">■ Stop</button>
-          <button id="captureClear" style="width:100%;margin-bottom:5px;">Clear</button>
-          <button id="captureSaveCsv" style="width:100%;margin-bottom:10px;">↓ CSV</button>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">
-            <span id="captureRunning">idle</span> &nbsp; <strong id="captureTotal">0 pkts</strong>
-          </div>
-          <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
-            <input type="checkbox" id="capAutoScroll" checked style="width:12px;height:12px;">
-            Auto-scroll
+          <button id="captureStart" class="primary" style="width:100%;margin-bottom:4px;background:var(--green);border-color:var(--green);">▶ Start</button>
+          <button id="captureStop" class="danger" style="width:100%;margin-bottom:4px;">■ Stop</button>
+          <button id="captureClear" style="width:100%;margin-bottom:4px;">Clear</button>
+          <label class="check-inline" style="margin-top:6px;font-size:11px;" title="Promisc ON: 해당 인터페이스의 모든 프레임 캡처&#10;Promisc OFF(기본): 자기 MAC으로 온 프레임만 캡처">
+            <input type="checkbox" id="capturePromisc"> Promisc
           </label>
-        </div>
-      </aside>
-
-      <div class="main-area">
-        <div class="panel-header" style="border-left:1px solid var(--border);">
-          <h2>Wireshark-style Capture</h2>
-        </div>
-        <div class="filter-bar">
-          <input id="captureFilter" placeholder="Filter: udp tcp arp icmp mac:aa:bb ip:192.168 port:50000 interface text">
-          <div class="proto-chips">
-            <button class="proto-chip active" data-proto="">ALL</button>
-            <button class="proto-chip" data-proto="UDP">UDP</button>
-            <button class="proto-chip" data-proto="TCP">TCP</button>
-            <button class="proto-chip" data-proto="ARP">ARP</button>
-            <button class="proto-chip" data-proto="ICMP">ICMP</button>
+          <div style="margin-top:8px;font-size:10px;">
+            <span id="captureRunning">idle</span> &nbsp;
+            <strong id="captureTotal">0 pkts</strong>
           </div>
         </div>
+      </div>
+      <!-- Main capture area -->
+      <div class="main-area">
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <input id="captureFilter" placeholder="Display Filter" style="flex:1;">
+          <button id="captureFilterApply" class="small">Apply</button>
+          <button id="captureFilterClear" class="small">Clear</button>
+          <button id="captureExportCsv" class="small">↓ Export CSV</button>
+        </div>
+        <!-- Protocol summary -->
+        <div class="proto-summary" id="captureProtoSummary">
+          ARP <span id="capCntArp">0</span> &nbsp;
+          IPv4 <span id="capCntIpv4">0</span> &nbsp;
+          IPv6 <span id="capCntIpv6">0</span> &nbsp;
+          TCP <span id="capCntTcp">0</span> &nbsp;
+          UDP <span id="capCntUdp">0</span> &nbsp;
+          ICMP <span id="capCntIcmp">0</span>
+        </div>
+        <!-- Interface filter checkboxes (hidden when only 1 interface) -->
+        <div class="iface-filters" id="capIfaceFilters"></div>
+        <!-- Packet table -->
         <div class="table-area">
           <table>
             <thead>
               <tr>
-                <th>No.</th><th>Time</th><th>Interface</th><th>Src MAC</th><th>Dst MAC</th>
-                <th>Source</th><th>Destination</th><th>Protocol</th><th>Len</th><th>Info</th>
+                <th>No.</th><th>Time</th><th>Interface</th>
+                <th>Src MAC</th><th>Dst MAC</th>
+                <th>Source</th><th>Destination</th>
+                <th>Protocol</th><th>Length</th><th>Info</th>
               </tr>
             </thead>
             <tbody id="captureRows">
@@ -298,28 +337,34 @@
             </tbody>
           </table>
         </div>
+        <!-- Bottom split: Details + Hex -->
         <div class="capture-split">
           <div class="cap-pane">
-            <div class="cap-head">Packet Details</div>
+            <div class="cap-head">
+              Packet Details
+              <button class="small" id="copyPacketDetails" style="margin-left:8px;">Copy</button>
+            </div>
             <pre id="packetDetails" style="color:var(--fg);">Select a packet.</pre>
           </div>
           <div class="cap-pane">
-            <div class="cap-head">Hex Bytes</div>
+            <div class="cap-head">
+              Hex Bytes
+              <button class="small" id="copyPacketHex" style="margin-left:8px;">Copy</button>
+            </div>
             <pre id="packetHex"></pre>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ══ HyperTerminal ════════════════════════════════════════════ -->
+    <!-- ══ TAB 3: HyperTerminal ═══════════════════════════════════════════════ -->
     <section id="hyperTermView" class="view">
       <div class="hyper-shell">
-
-        <!-- Toolbar — mirrors C# HyperTerminalView top bar exactly -->
+        <!-- Top toolbar -->
         <div class="hyper-toolbar">
           <label class="toolbar-label">PORT</label>
           <select id="serialPort" style="width:200px;"></select>
-          <button id="serialRefresh" class="small" style="width:24px;padding:3px 0;" title="포트 새로고침">↻</button>
+          <button id="serialRefresh" class="small" style="width:26px;padding:3px 0;" title="Refresh ports">↻</button>
           <label class="toolbar-label">BAUD</label>
           <select id="serialBaud" style="width:80px;">
             <option value="9600">9600</option>
@@ -330,62 +375,61 @@
             <option value="230400">230400</option>
             <option value="921600">921600</option>
           </select>
-          <button id="serialConnect" class="primary" style="width:80px;">연결</button>
-          <button id="serialBreak" class="small danger" style="width:50px;margin-left:4px;" title="Send serial BREAK signal" disabled>BRK</button>
+          <button id="serialToggle" class="primary small" style="width:100px;">Connect</button>
+          <button id="serialBrk" class="small danger" style="width:50px;" title="Send serial BREAK signal" disabled>BRK</button>
           <span id="serialLed" class="led-dot" style="margin-left:8px;"></span>
           <span id="serialState" class="serial-status-text">disconnected</span>
-          <button id="layoutToggle" class="small" style="margin-left:auto;width:28px;padding:3px 0;" title="3분할 레이아웃으로 전환">⊞</button>
+          <button id="serialClear" class="small" style="margin-left:auto;">Clear</button>
         </div>
 
-        <!-- Content: Register Viewer + Splitter + Terminal -->
+        <!-- Content: Register Viewer + Terminal -->
         <div id="hyperContent" class="hyper-content">
 
-          <!-- Register Viewer -->
-          <div class="reg-viewer">
-
-            <!-- TOC Sidebar (145px) -->
+          <!-- Register Viewer (left / top) -->
+          <div id="regViewerPanel" class="reg-viewer">
+            <!-- TOC Sidebar -->
             <div class="reg-toc">
               <div class="reg-toc-scroll">
                 <div class="toc-group">
-                  <button class="toc-head toc-active" data-sec="sysctl">● SYSTEM CONTROL</button>
+                  <button class="toc-head toc-active" data-sec="sysctl">&#9679; SYSTEM CONTROL</button>
                   <button class="toc-sub" data-sec="version">VERSION</button>
                   <button class="toc-sub" data-sec="sysport">SYSTEM / PORT</button>
                   <button class="toc-sub" data-sec="ahb">AHB</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="interrupt">● INTERRUPT</button>
+                  <button class="toc-head" data-sec="interrupt">&#9679; INTERRUPT</button>
                   <button class="toc-sub" data-sec="intr-ctrl">CTRL</button>
                   <button class="toc-sub" data-sec="intr-raw">RAW STATUS</button>
                   <button class="toc-sub" data-sec="intr-mask">MASK</button>
                   <button class="toc-sub" data-sec="intr-sw">SW TRIGGER</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="timestamp">● TIMESTAMP</button>
-                  <button class="toc-sub" data-sec="ts-time">현재 시각</button>
-                  <button class="toc-sub" data-sec="ts-adj">시간 보정</button>
+                  <button class="toc-head" data-sec="timestamp">&#9679; TIMESTAMP</button>
+                  <button class="toc-sub" data-sec="ts-time">Current Time</button>
+                  <button class="toc-sub" data-sec="ts-adj">Adjustment</button>
                   <button class="toc-sub" data-sec="ts-clk">CLK / PPS</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="ledclock">● LED / CLOCK</button>
+                  <button class="toc-head" data-sec="ledclock">&#9679; LED / CLOCK</button>
                   <button class="toc-sub" data-sec="led-ctrl">LED CTRL</button>
                   <button class="toc-sub" data-sec="ext-sw">EXT SWITCH</button>
                   <button class="toc-sub" data-sec="clk-limit">CLK LIMIT</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="testdata">● TEST DATA</button>
+                  <button class="toc-head" data-sec="testdata">&#9679; TEST DATA</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="fdb">● FDB</button>
+                  <button class="toc-head" data-sec="fdb">&#9679; FDB</button>
                   <button class="toc-sub" data-sec="fdb-ctrl">CONTROL</button>
                   <button class="toc-sub" data-sec="fdb-cmd">COMMAND</button>
                   <button class="toc-sub" data-sec="fdb-result">RESULT</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="count">● COUNT</button>
+                  <button class="toc-head" data-sec="count">&#9679; COUNT</button>
                   <button class="toc-sub" data-sec="count-rxtx">RX / TX / FBR</button>
                 </div>
                 <div class="toc-group">
-                  <button class="toc-head" data-sec="mdio">● MDIO</button>
+                  <button class="toc-head" data-sec="mdio">&#9679; MDIO</button>
                   <button class="toc-sub" data-sec="mdio-setup">SETUP / TIME</button>
                   <button class="toc-sub" data-sec="mdio-link">LINK STATUS</button>
                   <button class="toc-sub" data-sec="mdio-acc">PHY ACCESS</button>
@@ -393,30 +437,27 @@
               </div>
               <div class="toc-baseaddr">
                 <label>BASE ADDR</label>
-                <input id="regBaseAddr" class="mono" value="0x44A00000" title="Enter hex address and press Enter/Tab to apply">
+                <input id="regBaseAddr" class="mono" value="0x44A00000" title="Enter hex address and press Enter to apply">
               </div>
             </div>
-
-            <!-- Register Content Area (scrollable, all sections stacked) -->
+            <!-- Register Content -->
             <div id="regContent" class="reg-content">
 
               <!-- SYSTEM CONTROL -->
               <div id="rsec-sysctl" class="rsec">
                 <div class="rsec-head">SYSTEM CONTROL <button class="small" id="sysctlReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
-                  <!-- VERSION -->
                   <div class="reg-card" id="rsec-version">
                     <div class="reg-card-title">VERSION <small>VERSION_REG  0x000</small></div>
                     <div class="field"><label>Version</label><input id="rv-ver-str" class="mono" readonly placeholder="—" style="flex:1;min-width:0;"></div>
-                    <div class="row">
-                      <button class="small primary" id="rv-ver-read">Read</button>
-                      <button class="small" id="rv-ver-default">Default Load</button>
-                    </div>
                     <div class="reg-status" id="rv-st-version"></div>
                   </div>
-                  <!-- ENABLE_REG -->
                   <div class="reg-card" id="rsec-sysport">
-                    <div class="reg-card-title">ENABLE <small>ENABLE_REG  0x008</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>ENABLE <small>ENABLE_REG  0x008</small></span>
+                      <button class="small" id="rv-en-apply">Apply</button>
+                    </div>
+                    <button class="small danger" id="rv-ver-default" style="margin-bottom:8px;">Reset</button>
                     <label class="rv-chk"><input id="rv-en-tsgw" type="checkbox" checked><span>TSGW Enable (bit0)</span></label>
                     <div class="rv-port-grid">
                       <label class="rv-chk"><input id="rv-en-p0" type="checkbox" checked><span>P0</span></label>
@@ -428,22 +469,16 @@
                       <label class="rv-chk"><input id="rv-en-p6" type="checkbox" checked><span>P6</span></label>
                       <label class="rv-chk"><input id="rv-en-p7" type="checkbox" checked><span>P7</span></label>
                     </div>
-                    <div class="row" style="margin-top:6px;">
-                      <button class="small primary" id="rv-en-read">Read Enable</button>
-                      <button class="small" id="rv-en-apply">Apply Enable</button>
-                    </div>
                     <div class="reg-status" id="rv-st-enable"></div>
                   </div>
-                  <!-- HOST_IF_CTRL -->
                   <div class="reg-card" id="rsec-ahb">
-                    <div class="reg-card-title">HOST IF CTRL <small>HOST_IF_CTRL  0x00C</small></div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-                      <div class="field"><label>AhbWrWait (0–15)</label><input id="rv-ahb-wr" type="number" min="0" max="15" value="15"></div>
-                      <div class="field"><label>AhbRdWait (0–15)</label><input id="rv-ahb-rd" type="number" min="0" max="15" value="15"></div>
-                    </div>
-                    <div class="row">
-                      <button class="small primary" id="rv-ahb-read">Read</button>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>HOST IF CTRL <small>HOST_IF_CTRL  0x00C</small></span>
                       <button class="small" id="rv-ahb-apply">Apply</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                      <div class="field"><label>AhbWrWait (0-15)</label><input id="rv-ahb-wr" type="number" min="0" max="15" value="15"></div>
+                      <div class="field"><label>AhbRdWait (0-15)</label><input id="rv-ahb-rd" type="number" min="0" max="15" value="15"></div>
                     </div>
                     <div class="reg-status" id="rv-st-ahb"></div>
                   </div>
@@ -454,22 +489,22 @@
               <div id="rsec-interrupt" class="rsec">
                 <div class="rsec-head">INTERRUPT <button class="small" id="interruptReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
-                  <!-- INTERRUPT_CTRL 0x010 -->
                   <div class="reg-card" id="rsec-intr-ctrl">
-                    <div class="reg-card-title">Interrupt Polarity <small>0x010</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>Interrupt Polarity <small>0x010</small></span>
+                      <button class="small" id="rv-intr-ctrl-apply">Apply</button>
+                    </div>
                     <div style="display:flex;gap:14px;margin:6px 0;">
                       <label class="rv-chk"><input id="rv-intr-act-high" type="radio" name="intr-pol" value="0" checked><span>Active High</span></label>
                       <label class="rv-chk"><input id="rv-intr-act-low"  type="radio" name="intr-pol" value="1"><span>Active Low</span></label>
                     </div>
-                    <div class="row">
-                      <button class="small primary" id="rv-intr-ctrl-read">Read</button>
-                      <button class="small" id="rv-intr-ctrl-apply">Apply</button>
-                    </div>
                     <div class="reg-status" id="rv-st-intr-ctrl"></div>
                   </div>
-                  <!-- RAW_INTERRUPT 0x014 -->
                   <div class="reg-card" id="rsec-intr-raw">
-                    <div class="reg-card-title">RAW INTERRUPT <small>0x014</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>RAW INTERRUPT <small>0x014</small></span>
+                      <button class="small" id="rv-intr-raw-poll">&#9654; Poll</button>
+                    </div>
                     <div style="font-size:10px;color:var(--muted);margin-top:4px;">PORT [15:0]</div>
                     <div id="rv-intr-port-dots" style="display:flex;flex-wrap:wrap;gap:3px;margin:3px 0 6px;"></div>
                     <div style="font-size:10px;color:var(--muted);">MDIO [23:16]</div>
@@ -478,30 +513,23 @@
                       <span id="rv-intr-sw-dot" class="led-dot"></span>
                       <span style="font-size:11px;color:var(--muted);">SW_INTR (bit31)</span>
                     </div>
-                    <div class="row" style="margin-top:6px;">
-                      <button class="small primary" id="rv-intr-raw-read">Read</button>
-                      <button class="small" id="rv-intr-raw-poll">▶ Poll</button>
-                    </div>
                     <div class="reg-status" id="rv-st-intr-raw"></div>
                   </div>
-                  <!-- INTERRUPT_MASK 0x018 -->
                   <div class="reg-card" id="rsec-intr-mask" style="grid-column:span 2;">
-                    <div class="reg-card-title">INTERRUPT MASK <small>0x018</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>INTERRUPT MASK <small>0x018</small></span>
+                      <button class="small" id="rv-intr-mask-apply">Apply</button>
+                    </div>
                     <div style="font-size:10px;color:var(--muted);margin-top:4px;">PORT mask [15:0]</div>
                     <div id="rv-intr-port-mask" style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px;margin:3px 0 6px;"></div>
                     <div style="font-size:10px;color:var(--muted);">MDIO mask [23:16]</div>
                     <div id="rv-intr-mdio-mask" style="display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 4px;"></div>
                     <label class="rv-chk"><input id="rv-intr-sw-mask" type="checkbox"><span>SW INTR mask (bit31)</span></label>
-                    <div class="row" style="margin-top:6px;">
-                      <button class="small primary" id="rv-intr-mask-read">Read</button>
-                      <button class="small" id="rv-intr-mask-apply">Apply</button>
-                    </div>
                     <div class="reg-status" id="rv-st-intr-mask"></div>
                   </div>
-                  <!-- SW_INTERRUPT 0x01C -->
                   <div class="reg-card" id="rsec-intr-sw">
                     <div class="reg-card-title">SW INTERRUPT <small>0x01C</small></div>
-                    <p style="font-size:11px;color:var(--muted);margin:6px 0;">소프트웨어 인터럽트 강제 발생 (0x1 write)</p>
+                    <p style="font-size:11px;color:var(--muted);margin:6px 0;">Force software interrupt (write 0x1)</p>
                     <button class="small danger" id="rv-intr-sw-trigger">SW Trigger</button>
                     <div class="reg-status" id="rv-st-intr-sw"></div>
                   </div>
@@ -512,22 +540,20 @@
               <div id="rsec-timestamp" class="rsec">
                 <div class="rsec-head">TIMESTAMP <button class="small" id="timestampReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
-                  <!-- 현재 시각 + 시간 설정 0x020/0x024/0x028 -->
-                  <div class="reg-card" id="rsec-ts-time">
-                    <div class="reg-card-title">현재 시각 / 시간 설정 <small>0x020 / 0x024 / 0x028</small></div>
-                    <div class="field"><label>현재 시각</label><input id="rv-ts-current" class="mono" readonly placeholder="—" style="flex:1;font-size:11px;"></div>
-                    <div class="row"><button class="small primary" id="rv-ts-read-time">Read Time</button></div>
-                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">시간 설정</div>
+                  <div class="reg-card" id="rsec-ts-time" style="grid-column:span 2;">
+                    <div class="reg-card-title">Current Time / Set Time <small>0x020 / 0x024 / 0x028</small></div>
+                    <div class="field"><label>Current Time</label><input id="rv-ts-current" class="mono" readonly placeholder="—" style="flex:1;font-size:11px;"></div>
+                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">Set Time</div>
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">
                       <div class="field"><label style="font-size:10px;">Year</label><input id="rv-ts-year" type="number" value="2025" min="2000" max="2099"></div>
                       <div class="field"><label style="font-size:10px;">Month</label><input id="rv-ts-month" type="number" value="1" min="1" max="12"></div>
                       <div class="field"><label style="font-size:10px;">Day</label><input id="rv-ts-day" type="number" value="1" min="1" max="31"></div>
-                      <div class="field"><label style="font-size:10px;">NS</label><input id="rv-ts-set-ns" type="number" value="0" min="0" max="999999999"></div>
+                      <div class="field"><label style="font-size:10px;">Hour</label><input id="rv-ts-hour" type="number" value="0" min="0" max="23"></div>
                     </div>
                     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:4px;">
-                      <div class="field"><label style="font-size:10px;">Hour</label><input id="rv-ts-hour" type="number" value="0" min="0" max="23"></div>
                       <div class="field"><label style="font-size:10px;">Min</label><input id="rv-ts-min" type="number" value="0" min="0" max="59"></div>
                       <div class="field"><label style="font-size:10px;">Sec</label><input id="rv-ts-sec" type="number" value="0" min="0" max="59"></div>
+                      <div class="field"><label style="font-size:10px;">NS</label><input id="rv-ts-set-ns" type="number" value="0" min="0" max="999999999"></div>
                     </div>
                     <div class="row" style="margin-top:6px;">
                       <button class="small" id="rv-ts-now">Now</button>
@@ -535,41 +561,33 @@
                     </div>
                     <div class="reg-status" id="rv-st-ts"></div>
                   </div>
-                  <!-- 클럭 / PPS 0x02C / 0x030 -->
                   <div class="reg-card" id="rsec-ts-clk">
-                    <div class="reg-card-title">클럭 설정 <small>ADDEND 0x02C / CTRL_1 0x030</small></div>
-                    <div class="field"><label>Clock (MHz)</label><input id="rv-ts-clk-mhz" type="number" value="200" step="0.001" min="0" style="width:90px;"></div>
-                    <div class="row">
-                      <button class="small primary" id="rv-ts-read-clock">Read Clock</button>
-                      <button class="small" id="rv-ts-apply-clock">Apply Clock</button>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>Clock Settings <small>ADDEND 0x02C / CTRL_1 0x030</small></span>
+                      <button class="small" id="rv-ts-apply-all">Apply</button>
                     </div>
-                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">PPS 출력 소스 [17:16]</div>
+                    <div class="field"><label>Clock (MHz)</label><input id="rv-ts-clk-mhz" type="number" value="200" step="0.001" min="0" style="width:90px;"></div>
+                    <div style="font-size:10px;color:var(--muted);margin:6px 0 2px;">PPS Source [17:16]</div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 6px;">
                       <label class="rv-chk"><input id="rv-ts-pps-dis" type="radio" name="ts-pps-src" value="0"><span>Disable</span></label>
                       <label class="rv-chk"><input id="rv-ts-pps-int" type="radio" name="ts-pps-src" value="1" checked><span>Internal</span></label>
                       <label class="rv-chk"><input id="rv-ts-pps-gps" type="radio" name="ts-pps-src" value="2"><span>GPS</span></label>
                     </div>
                     <div class="field"><label>PPS Width (ms, 0-510)</label><input id="rv-ts-pps-width" type="number" value="100" min="0" max="510" step="2" style="width:80px;"></div>
-                    <div class="row">
-                      <button class="small primary" id="rv-ts-read-pps">Read PPS</button>
-                      <button class="small" id="rv-ts-apply-pps">Apply PPS</button>
-                    </div>
                     <div class="reg-status" id="rv-st-ts-clk"></div>
                   </div>
-                  <!-- 시간 보정 0x034 / 0x038 -->
                   <div class="reg-card" id="rsec-ts-adj">
-                    <div class="reg-card-title">시간 보정 <small>INCDEC_0 0x034 / INCDEC_1 0x038</small></div>
-                    <div class="field" style="align-items:center;gap:4px;">
-                      <label>NS 보정 (ms)</label>
-                      <input id="rv-ts-ns-adj" type="number" value="0" style="width:70px;">
-                      <button class="small primary" id="rv-ts-ns-inc" style="min-width:28px;">+</button>
-                      <button class="small" id="rv-ts-ns-dec" style="min-width:28px;">−</button>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>Time Adjustment <small>INCDEC_0 0x034 / INCDEC_1 0x038</small></span>
+                      <button class="small" id="rv-ts-apply-adj">Apply</button>
                     </div>
-                    <div class="field" style="align-items:center;gap:4px;">
-                      <label>SEC 보정 (초)</label>
+                    <div class="field">
+                      <label>NS Adjust (ms)</label>
+                      <input id="rv-ts-ns-adj" type="number" value="0" style="width:70px;">
+                    </div>
+                    <div class="field">
+                      <label>SEC Adjust (s)</label>
                       <input id="rv-ts-sec-adj" type="number" value="0" style="width:70px;">
-                      <button class="small primary" id="rv-ts-sec-inc" style="min-width:28px;">+</button>
-                      <button class="small" id="rv-ts-sec-dec" style="min-width:28px;">−</button>
                     </div>
                     <div class="reg-status" id="rv-st-ts-adj"></div>
                   </div>
@@ -580,59 +598,44 @@
               <div id="rsec-ledclock" class="rsec">
                 <div class="rsec-head">LED / CLOCK <button class="small" id="ledclockReadAll">READ ALL</button></div>
                 <div class="rsec-grid">
-                  <!-- LED_OUT 0x060 -->
                   <div class="reg-card" id="rsec-led-ctrl">
-                    <div class="reg-card-title">LED CTRL <small>LED_OUT  0x060</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>LED CTRL <small>LED_OUT  0x060</small></span>
+                      <button class="small" id="rv-led-apply">Apply</button>
+                    </div>
                     <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">FPGA_LED_CTRL [9:8]</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
                       <label class="rv-chk"><input id="rv-led-cpu-gpio"  type="radio" name="led-mode" value="0"><span>CPU GPIO</span></label>
                       <label class="rv-chk"><input id="rv-led-fpga-auto" type="radio" name="led-mode" value="1" checked><span>FPGA Auto</span></label>
                       <label class="rv-chk"><input id="rv-led-register"  type="radio" name="led-mode" value="3"><span>Register</span></label>
                     </div>
-                    <!-- FPGA auto dots (read-only) -->
                     <div id="rv-led-fpga-dots"></div>
-                    <!-- Register mode checkboxes -->
                     <div id="rv-led-reg-chks" class="rv-port-grid" style="display:none;"></div>
-                    <!-- CPU GPIO warning -->
-                    <div id="rv-led-cpu-warn" style="display:none;font-size:11px;color:var(--muted);margin:4px 0;">CPU GPIO 모드 — 레지스터 제어 불가</div>
-                    <div class="row" style="margin-top:6px;">
-                      <button class="small primary" id="rv-led-read">Read</button>
-                      <button class="small" id="rv-led-apply-mode">Apply Mode</button>
-                      <button class="small" id="rv-led-apply-reg" style="display:none;">Apply LEDs</button>
-                    </div>
+                    <div id="rv-led-cpu-warn" style="display:none;font-size:11px;color:var(--muted);margin:4px 0;">CPU GPIO mode — register control unavailable</div>
                     <div class="reg-status" id="rv-st-led"></div>
                   </div>
-                  <!-- EXT_SW_IN 0x064 -->
                   <div class="reg-card" id="rsec-ext-sw">
                     <div class="reg-card-title">EXT SWITCH <small>EXT_SW_IN  0x064</small></div>
                     <div style="font-size:10px;color:var(--muted);margin-bottom:3px;">External switch inputs [5:0] (read-only)</div>
                     <div id="rv-ext-sw-dots" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0;"></div>
-                    <div class="row">
-                      <button class="small primary" id="rv-ext-sw-read">Read</button>
-                    </div>
                     <div class="reg-status" id="rv-st-ext-sw"></div>
                   </div>
-                  <!-- CLK COUNT LIMIT 0x068 / 0x06C / 0x0D0 -->
                   <div class="reg-card" id="rsec-clk-limit">
-                    <div class="reg-card-title">CLK COUNT LIMIT <small>limit = MHz×10⁶/2</small></div>
-                    <div class="field" style="align-items:center;gap:4px;">
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>CLK COUNT LIMIT <small>limit = MHz*10^6/2</small></span>
+                      <button class="small" id="rv-clk-apply-all">Apply</button>
+                    </div>
+                    <div class="field">
                       <label>SYS CLK (MHz)<small style="color:var(--muted);"> 0x068</small></label>
                       <input id="rv-clk-sys" type="number" value="200" step="0.001" min="0" style="width:80px;">
-                      <button class="small" id="rv-clk-sys-apply" style="margin-left:2px;">Apply</button>
                     </div>
-                    <div class="field" style="align-items:center;gap:4px;">
+                    <div class="field">
                       <label>AHB CLK (MHz)<small style="color:var(--muted);"> 0x06C</small></label>
                       <input id="rv-clk-ahb" type="number" value="100" step="0.001" min="0" style="width:80px;">
-                      <button class="small" id="rv-clk-ahb-apply" style="margin-left:2px;">Apply</button>
                     </div>
-                    <div class="field" style="align-items:center;gap:4px;">
+                    <div class="field">
                       <label>RGMII0 (MHz)<small style="color:var(--muted);"> 0x0D0</small></label>
                       <input id="rv-clk-rgmii" type="number" value="125" step="0.001" min="0" style="width:80px;">
-                      <button class="small" id="rv-clk-rgmii-apply" style="margin-left:2px;">Apply</button>
-                    </div>
-                    <div class="row" style="margin-top:4px;">
-                      <button class="small primary" id="rv-clk-read">Read</button>
-                      <button class="small" id="rv-clk-apply-all">Apply All</button>
                     </div>
                     <div class="reg-status" id="rv-st-clk-limit"></div>
                   </div>
@@ -641,27 +644,25 @@
 
               <!-- TEST DATA -->
               <div id="rsec-testdata" class="rsec">
-                <div class="rsec-head">TEST DATA <button class="small" id="testdataReadAll">READ ALL</button> <button class="small" id="testdataWriteAll">WRITE ALL</button></div>
+                <div class="rsec-head"><span>TEST DATA</span><span><button class="small" id="testdataReadAll">READ ALL</button> <button class="small" id="testdataWriteAll">WRITE ALL</button></span></div>
                 <div class="rsec-grid" style="grid-template-columns:1fr;">
                   <div class="reg-card">
-                    <div class="reg-card-title">TEST_DATA_0 ~ TEST_DATA_7 <small>0x040 – 0x05C</small></div>
-                    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;">
+                    <div class="reg-card-title">TEST_DATA_0 ~ TEST_DATA_7 <small>0x040 - 0x05C</small></div>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;table-layout:fixed;">
                       <thead><tr style="font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);">
-                        <th style="text-align:left;padding:2px 6px;font-weight:600;">Name</th>
-                        <th style="padding:2px 6px;font-weight:600;">Offset</th>
-                        <th style="padding:2px 6px;font-weight:600;">Value</th>
-                        <th style="padding:2px 6px;font-weight:600;"></th>
+                        <th style="text-align:left;padding:2px 6px;font-weight:600;width:110px;">Name</th>
+                        <th style="padding:2px 6px;font-weight:600;width:200px;">Value</th>
                         <th style="padding:2px 6px;font-weight:600;">Status</th>
                       </tr></thead>
                       <tbody>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_0</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x040</td><td style="padding:2px 4px;"><input id="rv-td-0" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0">R</button><button class="small" data-rw="write" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-0"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_1</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x044</td><td style="padding:2px 4px;"><input id="rv-td-1" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1">R</button><button class="small" data-rw="write" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-1"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_2</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x048</td><td style="padding:2px 4px;"><input id="rv-td-2" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2">R</button><button class="small" data-rw="write" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-2"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_3</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x04C</td><td style="padding:2px 4px;"><input id="rv-td-3" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3">R</button><button class="small" data-rw="write" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-3"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_4</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x050</td><td style="padding:2px 4px;"><input id="rv-td-4" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4">R</button><button class="small" data-rw="write" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-4"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_5</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x054</td><td style="padding:2px 4px;"><input id="rv-td-5" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5">R</button><button class="small" data-rw="write" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-5"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_6</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x058</td><td style="padding:2px 4px;"><input id="rv-td-6" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6">R</button><button class="small" data-rw="write" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-6"></span></td></tr>
-                        <tr><td style="padding:3px 6px;">TEST_DATA_7</td><td class="mono" style="padding:2px 6px;font-size:11px;">0x05C</td><td style="padding:2px 4px;"><input id="rv-td-7" class="mono" value="0x00000000" style="width:110px;font-size:11px;"></td><td style="padding:2px 4px;white-space:nowrap;"><button class="small primary" data-rw="read" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7">R</button><button class="small" data-rw="write" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7" style="margin-left:2px;">W</button></td><td><span class="reg-status" id="rv-st-td-7"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_0</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-0" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0">R</button><button class="small" data-rw="write" data-off-val="0x040" data-val="rv-td-0" data-st="rv-st-td-0">W</button></div></td><td><span class="reg-status" id="rv-st-td-0"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_1</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-1" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1">R</button><button class="small" data-rw="write" data-off-val="0x044" data-val="rv-td-1" data-st="rv-st-td-1">W</button></div></td><td><span class="reg-status" id="rv-st-td-1"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_2</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-2" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2">R</button><button class="small" data-rw="write" data-off-val="0x048" data-val="rv-td-2" data-st="rv-st-td-2">W</button></div></td><td><span class="reg-status" id="rv-st-td-2"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_3</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-3" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3">R</button><button class="small" data-rw="write" data-off-val="0x04C" data-val="rv-td-3" data-st="rv-st-td-3">W</button></div></td><td><span class="reg-status" id="rv-st-td-3"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_4</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-4" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4">R</button><button class="small" data-rw="write" data-off-val="0x050" data-val="rv-td-4" data-st="rv-st-td-4">W</button></div></td><td><span class="reg-status" id="rv-st-td-4"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_5</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-5" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5">R</button><button class="small" data-rw="write" data-off-val="0x054" data-val="rv-td-5" data-st="rv-st-td-5">W</button></div></td><td><span class="reg-status" id="rv-st-td-5"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_6</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-6" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6">R</button><button class="small" data-rw="write" data-off-val="0x058" data-val="rv-td-6" data-st="rv-st-td-6">W</button></div></td><td><span class="reg-status" id="rv-st-td-6"></span></td></tr>
+                        <tr><td style="padding:3px 6px;">TEST_DATA_7</td><td style="padding:2px 4px;"><div style="display:flex;align-items:center;gap:3px;"><input id="rv-td-7" class="mono" value="0x00000000" style="width:110px;font-size:11px;"><button class="small primary" data-rw="read" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7">R</button><button class="small" data-rw="write" data-off-val="0x05C" data-val="rv-td-7" data-st="rv-st-td-7">W</button></div></td><td><span class="reg-status" id="rv-st-td-7"></span></td></tr>
                       </tbody>
                     </table>
                     <div class="reg-status" id="rv-st-testdata"></div>
@@ -673,43 +674,36 @@
               <div id="rsec-fdb" class="rsec">
                 <div class="rsec-head">FDB <button class="small" id="fdbReadConfig">READ CONFIG</button></div>
                 <div class="rsec-grid">
-                  <!-- FDB CONTROL -->
                   <div class="reg-card" id="rsec-fdb-ctrl">
-                    <div class="reg-card-title">FDB CONTROL <small>0xA00</small></div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>FDB CONTROL <small>0xA00</small></span>
+                      <button class="small" id="rv-fdb-apply-en">Apply</button>
+                    </div>
                     <div class="field"><label>Version</label><input id="rv-fdb-ver" class="mono" readonly placeholder="—"></div>
                     <label class="rv-chk"><input id="rv-fdb-age-scan" type="checkbox"><span>AgeScan Enable (bit4)</span></label>
                     <label class="rv-chk"><input id="rv-fdb-learning" type="checkbox"><span>Learning Enable (bit1)</span></label>
                     <label class="rv-chk"><input id="rv-fdb-lookup" type="checkbox"><span>Lookup Enable (bit0)</span></label>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
-                      <div class="field"><label>AgePeriodNs</label><input id="rv-fdb-age-period" class="mono" readonly placeholder="—"></div>
-                      <div class="field"><label>AgingThrVal</label><input id="rv-fdb-aging-thr" class="mono" readonly placeholder="—"></div>
+                      <div class="field"><label>AgePeriodNs</label><input id="rv-fdb-age-period" class="mono" placeholder="—"></div>
+                      <div class="field"><label>AgingThrVal</label><input id="rv-fdb-aging-thr" class="mono" placeholder="—"></div>
                     </div>
                     <div class="row" style="margin-top:6px;">
                       <button class="small primary" id="rv-fdb-read-config">Read Config</button>
-                      <button class="small" id="rv-fdb-apply-en">Apply Enable</button>
                       <button class="small" id="rv-fdb-load-default">Default Load</button>
                     </div>
                     <div class="reg-status" id="rv-st-fdb-ctrl"></div>
                   </div>
-                  <!-- FDB COMMAND -->
                   <div class="reg-card" id="rsec-fdb-cmd" style="grid-column:span 2;">
                     <div class="reg-card-title">FDB COMMAND</div>
-                    <div class="field">
-                      <label>Port-MAC</label>
-                      <select id="rv-fdb-port-mac" style="flex:1;padding:3px 6px;background:var(--input,var(--bg));color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;">
-                        <option value="">— 선택 —</option>
-                        <option value="0|9C:6B:00:49:3A:32">Port 0  (9C:6B:00:49:3A:32)</option>
-                        <option value="1|C8:4D:44:25:2D:37">Port 1  (C8:4D:44:25:2D:37)</option>
-                        <option value="2|A0:36:9F:A8:E4:A7">Port 2  (A0:36:9F:A8:E4:A7)</option>
-                        <option value="3|A0:36:9F:A8:E4:A5">Port 3  (A0:36:9F:A8:E4:A5)</option>
-                        <option value="4|A0:36:9F:A8:E4:A4">Port 4  (A0:36:9F:A8:E4:A4)</option>
-                        <option value="5|A0:36:9F:A8:E4:A6">Port 5  (A0:36:9F:A8:E4:A6)</option>
-                      </select>
-                    </div>
-                    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;">
-                      <div class="field"><label>MAC</label><input id="rv-fdb-mac" class="mono" value="00:00:00:00:00:00" placeholder="XX:XX:XX:XX:XX:XX"></div>
-                      <div class="field"><label>VLAN ID</label><input id="rv-fdb-vlan" type="number" value="0" min="0" max="4095"></div>
-                      <div class="field check"><input id="rv-fdb-vlan-valid" type="checkbox"><label style="margin:0;">VLAN valid</label></div>
+                    <datalist id="fdb-mac-list">
+                      <option value="A0:36:9F:A8:DA:60">Port 0 (enp12s0f0)</option>
+                      <option value="A0:36:9F:A8:DA:61">Port 1 (enp12s0f1)</option>
+                      <option value="A0:36:9F:A8:DA:62">Port 2 (enp12s0f2)</option>
+                      <option value="A0:36:9F:A8:DA:63">Port 3 (enp12s0f3)</option>
+                    </datalist>
+                    <div style="display:grid;grid-template-columns:3fr 2fr;gap:6px;">
+                      <div class="field"><label>MAC</label><div style="display:flex;gap:2px;flex:1;min-width:0;"><input id="rv-fdb-mac" class="mono" list="fdb-mac-list" value="00:00:00:00:00:00" placeholder="XX:XX:XX:XX:XX:XX" style="flex:1;min-width:0;"><button id="rv-fdb-mac-pick" class="small" title="포트 MAC 선택" style="padding:2px 7px;flex-shrink:0;">▼</button></div></div>
+                      <div class="field"><label>VLAN ID</label><div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;"><input id="rv-fdb-vlan" type="number" value="0" min="0" max="4095" style="flex:1;min-width:0;"><label style="display:flex;align-items:center;gap:3px;margin:0;font-size:11px;white-space:nowrap;cursor:pointer;"><input id="rv-fdb-vlan-valid" type="checkbox" style="flex-shrink:0;margin:0;"> valid</label></div></div>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
                       <div class="field"><label>Port</label><input id="rv-fdb-port" type="number" value="0" min="0" max="511"></div>
@@ -722,33 +716,32 @@
                       <button class="small" id="rv-fdb-wrhash">Write(Hash)</button>
                       <button class="small" id="rv-fdb-wrbucket">Write(Bucket)</button>
                       <button class="small danger" id="rv-fdb-delete">Delete</button>
-                      <button class="small danger" id="rv-fdb-initall">Init All</button>
+                      <button class="small danger" id="rv-fdb-initall" style="margin-top:6px;">Init All Tables</button>
                     </div>
                     <div class="reg-status" id="rv-st-fdb-cmd"></div>
                   </div>
-                </div>
-                <!-- FDB RESULTS TABLE -->
-                <div style="margin-top:8px;padding:0 2px;">
-                  <div class="reg-card-title" style="padding:4px 0 4px;">FDB RESULTS</div>
-                  <div style="overflow-x:auto;">
-                    <table class="fdb-table">
-                      <thead><tr><th>Bucket</th><th>Slot</th><th>MAC</th><th>Port</th><th>Status</th><th>Timestamp</th></tr></thead>
-                      <tbody id="rv-fdb-tbody"><tr><td colspan="6" style="text-align:center;color:var(--muted);">No results yet</td></tr></tbody>
-                    </table>
+                  <div class="reg-card" style="grid-column:1 / -1;">
+                    <div class="reg-card-title">FDB RESULTS</div>
+                    <div style="overflow-x:auto;">
+                      <table class="fdb-table">
+                        <thead><tr><th>Bucket</th><th>Slot</th><th>MAC</th><th>Port</th><th>Status</th><th>Timestamp</th></tr></thead>
+                        <tbody id="rv-fdb-tbody"><tr><td colspan="6" style="text-align:center;color:var(--muted);">No results yet</td></tr></tbody>
+                      </table>
+                    </div>
+                    <div class="reg-status" id="rv-st-fdb-result"></div>
                   </div>
-                  <div class="reg-status" id="rv-st-fdb-result"></div>
                 </div>
               </div>
 
               <!-- COUNT -->
               <div id="rsec-count" class="rsec">
-                <div class="rsec-head">COUNT</div>
+                <div class="rsec-head"><span>COUNT</span><span><button class="small" id="rv-count-read">Read</button> <button class="small" id="rv-count-clear">Clear</button></span></div>
                 <div class="rsec-grid" style="grid-template-columns:1fr;">
                   <div class="reg-card" id="rsec-count-rxtx">
                     <div class="reg-card-title">RX / TX / FBR Counters <small>read_cnt</small></div>
                     <div class="row" style="align-items:center;gap:6px;flex-wrap:wrap;">
                       <label class="toolbar-label">Port</label>
-                      <select id="rv-count-port" style="padding:3px 6px;background:var(--input,var(--bg));color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                      <select id="rv-count-port" style="padding:3px 6px;background:var(--surf);color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;">
                         <option value="all">ALL</option>
                         <option value="0">Port 0</option>
                         <option value="1">Port 1</option>
@@ -757,8 +750,6 @@
                         <option value="4">Port 4</option>
                         <option value="5">Port 5</option>
                       </select>
-                      <button class="small primary" id="rv-count-read">Read</button>
-                      <button class="small" id="rv-count-clear">Clear</button>
                     </div>
                     <div style="overflow-x:auto;margin-top:6px;">
                       <table class="fdb-table">
@@ -775,12 +766,14 @@
               <div id="rsec-mdio" class="rsec">
                 <div class="rsec-head">MDIO <button class="small primary" id="rv-mdio-read-link">Read All Link Status</button></div>
                 <div class="rsec-grid">
-                  <!-- MDIO SETUP -->
                   <div class="reg-card" id="rsec-mdio-setup">
-                    <div class="reg-card-title">MDIO SETUP</div>
+                    <div class="reg-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                      <span>MDIO SETUP</span>
+                      <button class="small" id="rv-mdio-apply">Apply</button>
+                    </div>
                     <div class="field">
                       <label>Port</label>
-                      <select id="rv-mdio-port" style="flex:1;padding:3px 6px;background:var(--input,var(--bg));color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:12px;">
+                      <select id="rv-mdio-port" style="flex:1;padding:3px 6px;background:var(--surf);color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;">
                         <option value="0">Port 0  (MDIO0)</option>
                         <option value="1">Port 1  (MDIO1)</option>
                         <option value="2">Port 2  (MDIO2)</option>
@@ -793,21 +786,20 @@
                     <label class="rv-chk"><input id="rv-mdio-predis" type="checkbox"><span>Preamble Disable</span></label>
                     <label class="rv-chk"><input id="rv-mdio-intr" type="checkbox"><span>Interrupt Enable</span></label>
                     <div class="field" style="margin-top:6px;">
-                      <label>Target MDC (MHz)</label>
-                      <input id="rv-mdio-mhz" type="text" value="2.5" style="width:55px;">
-                      <button class="small" id="rv-mdio-calc" style="margin-left:4px;">Calc</button>
+                      <label>Target MDC</label>
+                      <div style="display:flex;align-items:center;gap:4px;">
+                        <input id="rv-mdio-mhz" type="text" value="2.5" style="width:55px;flex-shrink:0;">
+                        <span style="font-size:10px;color:var(--muted);">MHz</span>
+                        <button class="small" id="rv-mdio-calc" style="padding:1px 5px;font-size:11px;">Calc</button>
+                      </div>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin:4px 0;">
                       <div class="field"><label style="font-size:10px;">CLK Div</label><input id="rv-mdio-clk" class="mono" readonly value="20"></div>
                       <div class="field"><label style="font-size:10px;">MILLISEC</label><input id="rv-mdio-ms" class="mono" readonly value="2500"></div>
                       <div class="field"><label style="font-size:10px;">UNIT</label><input id="rv-mdio-unit" class="mono" readonly value="100"></div>
                     </div>
-                    <div class="row">
-                      <button class="small primary" id="rv-mdio-apply">Apply Setup</button>
-                    </div>
                     <div class="reg-status" id="rv-st-mdio"></div>
                   </div>
-                  <!-- PHY ACCESS -->
                   <div class="reg-card" id="rsec-mdio-acc">
                     <div class="reg-card-title">PHY ACCESS</div>
                     <div class="field"><label>PHY Addr</label><input id="rv-mdio-phy-addr" class="mono" value="0x00" style="width:80px;"></div>
@@ -820,7 +812,6 @@
                     <div class="reg-status" id="rv-st-mdio-acc"></div>
                   </div>
                 </div>
-                <!-- LINK STATUS TABLE -->
                 <div id="rsec-mdio-link" style="margin-top:8px;padding:0 2px;">
                   <div class="reg-card-title" style="padding:4px 0 4px;">LINK STATUS</div>
                   <div style="overflow-x:auto;">
@@ -841,111 +832,270 @@
               </div>
 
             </div><!-- #regContent -->
-          </div><!-- .reg-viewer -->
+          </div><!-- #regViewerPanel -->
 
-          <!-- Draggable splitter -->
+          <!-- Splitter -->
           <div id="hyperSplitter" class="hyper-splitter"></div>
 
-          <!-- Terminal -->
+          <!-- TERMINAL (right side) -->
           <div class="hyper-terminal">
             <div class="panel-header">
-              <h2>TERMINAL</h2>
-              <button id="serialClear" class="small">Clear</button>
+              <span class="ph-title">TERMINAL</span>
+              <button id="regViewerToggle" class="small" title="Toggle Register Viewer">Register Viewer ◀</button>
             </div>
             <div id="serialOutput" class="terminal-output">No terminal output.</div>
             <div class="terminal-input">
               <span>&gt;</span>
               <input id="serialInput" placeholder="Type command and press Enter">
-              <button id="serialSend" class="primary" style="min-width:60px;">전송</button>
+              <button id="serialSend" class="primary small" style="min-width:60px;">전송</button>
             </div>
           </div>
 
-        </div><!-- #hyperContent -->
-      </div><!-- .hyper-shell -->
+      </div><!-- .hyper-content -->
+    </div><!-- .hyper-shell -->
     </section>
 
-    <!-- ══ Settings ═════════════════════════════════════════════════ -->
+    <!-- ══ TAB 4: Settings ════════════════════════════════════════════════════ -->
     <section id="settingsView" class="view">
       <div class="settings-wrap">
-        <h2>Settings</h2>
 
-        <!-- Theme / Connection -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
-          <div class="reg-card" style="padding:12px;">
-            <div class="reg-card-title">Theme</div>
-            <div style="display:flex;gap:8px;margin-top:6px;">
-              <a href="/" style="flex:1;text-align:center;" class="small primary" id="themeLink">Dark</a>
-              <a href="/index-light.html" style="flex:1;text-align:center;" class="small">Light</a>
+        <!-- ── PORT MAPPING ─────────────────────────────────────────────────── -->
+        <div class="st-card">
+          <div class="st-card-head">
+            PORT MAPPING
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <span id="portmapSt" class="reg-status"></span>
+              <button class="small" id="portmapReload">↺ Reload</button>
+              <button class="small primary" id="portmapSave">Save</button>
             </div>
           </div>
-          <div class="reg-card" style="padding:12px;">
-            <div class="reg-card-title">Worker Status</div>
-            <div id="settingsWorkerState" style="font-size:11px;color:var(--muted);margin:6px 0;">—</div>
-            <button class="small" id="settingsWorkerRefresh">Refresh</button>
+          <!-- Node B URL bar -->
+          <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surfAlt);border-bottom:1px solid var(--border);">
+            <span style="font-size:10px;color:var(--muted);white-space:nowrap;">Node B URL</span>
+            <input id="portmapNodeBUrl" type="text" value="http://169.254.1.168:8080"
+                   style="max-width:240px;" placeholder="http://169.254.x.x:8080">
+            <button class="small" id="portmapProbeB">Probe B</button>
+            <span id="portmapProbeSt" style="font-size:10px;color:var(--muted);"></span>
+          </div>
+          <div class="st-card-body">
+            <table class="fdb-table" style="width:100%">
+              <thead>
+                <tr>
+                  <th style="width:55px;text-align:center;">Port</th>
+                  <th style="width:70px;text-align:center;">Node</th>
+                  <th>Interface</th>
+                  <th style="width:140px">MAC</th>
+                  <th style="width:120px">IPv4</th>
+                </tr>
+              </thead>
+              <tbody id="portmapBody"></tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Register Base Address -->
-        <div class="reg-card" style="padding:12px;margin-bottom:12px;">
-          <div class="reg-card-title">Register Base Address</div>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
-            <input id="settingsBaseAddr" class="mono" style="width:130px;" placeholder="0x44A00000">
-            <button class="small primary" id="settingsBaseAddrApply">Apply</button>
-            <span id="settingsBaseAddrSt" style="font-size:10px;color:var(--muted);"></span>
+        <!-- ── 2-PC EXPERIMENT ───────────────────────────────────────────────── -->
+        <div class="st-card" style="margin-top:16px;">
+          <div class="st-card-head">
+            2-PC EXPERIMENT
+          </div>
+          <div class="st-card-body">
+
+            <!-- Node A / Node B -->
+            <div class="twopc-nodes">
+              <div class="twopc-node">
+                <div class="twopc-node-title">NODE A <span style="font-weight:400;color:var(--muted);">(이 PC)</span></div>
+                <div class="field" style="margin-bottom:6px;">
+                  <label>URL</label>
+                  <div style="display:flex;gap:4px;">
+                    <input id="twoPcUrlA" type="text" value="http://169.254.88.222:8080">
+                    <button class="small" id="twoPcProbeA" style="white-space:nowrap;">Probe</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Interface (SW 포트)</label>
+                  <select id="twoPcIfaceA"><option value="">— probe first —</option></select>
+                </div>
+              </div>
+
+              <div class="twopc-node">
+                <div class="twopc-node-title">NODE B <span style="font-weight:400;color:var(--muted);">(상대 PC · SW P4/P5)</span></div>
+                <div class="field" style="margin-bottom:6px;">
+                  <label>URL</label>
+                  <div style="display:flex;gap:4px;">
+                    <input id="twoPcUrlB" type="text" value="http://169.254.1.168:8080">
+                    <button class="small" id="twoPcProbeB" style="white-space:nowrap;">Probe</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Interface (SW P4 or P5)</label>
+                  <select id="twoPcIfaceB"><option value="">— probe first —</option></select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Test parameters -->
+            <div class="twopc-params">
+              <div class="field">
+                <label>Direction</label>
+                <select id="twoPcDir">
+                  <option value="BOTH">Both (A ↔ B)</option>
+                  <option value="A_TO_B">A → B</option>
+                  <option value="B_TO_A">B → A</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Packet Count</label>
+                <input id="twoPcCount" type="number" value="10" min="1" max="1000">
+              </div>
+              <div class="field">
+                <label>Interval (ms)</label>
+                <input id="twoPcInterval" type="number" value="100" min="0">
+              </div>
+              <div class="field">
+                <label>Capture Timeout (ms)</label>
+                <input id="twoPcCapTimeout" type="number" value="3000" min="500">
+              </div>
+            </div>
+
+            <!-- Run button -->
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+              <button class="primary" id="twoPcRun">&#9654; Run Test</button>
+              <span id="twoPcSt" class="reg-status" style="font-size:12px;"></span>
+            </div>
+
+            <!-- Results -->
+            <div id="twoPcResults" style="display:none;margin-top:14px;">
+              <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;">RESULTS</div>
+              <table class="fdb-table" style="width:100%">
+                <thead>
+                  <tr>
+                    <th>Direction</th>
+                    <th>Sender</th>
+                    <th>Receiver</th>
+                    <th style="width:50px;text-align:center;">Sent</th>
+                    <th style="width:60px;text-align:center;">Matched</th>
+                    <th style="width:60px;text-align:center;">Result</th>
+                  </tr>
+                </thead>
+                <tbody id="twoPcBody"></tbody>
+              </table>
+              <div id="twoPcOverall" style="margin-top:8px;font-size:13px;font-weight:700;"></div>
+            </div>
+
           </div>
         </div>
 
-        <!-- API Reference -->
-        <h3 style="margin-bottom:6px;">API Reference</h3>
-        <div class="api-grid" style="margin-bottom:20px;">
-          <code>GET /api/health</code><code>GET /api/interfaces</code>
-          <code>POST /api/build</code><code>POST /api/send</code>
-          <code>POST /api/capture/start</code><code>POST /api/capture/stop</code>
-          <code>GET /api/capture/packets</code><code>GET /api/serial/status</code>
-          <code>POST /api/serial/connect</code><code>POST /api/serial/send</code>
-          <code>POST /api/serial/break</code><code>POST /api/register/read</code>
-          <code>POST /api/register/write</code><code>POST /api/register/base-addr</code>
-          <code>POST /api/fdb/read</code><code>POST /api/fdb/write</code>
-          <code>POST /api/fdb/delete</code><code>POST /api/fdb/flush</code>
-          <code>GET /api/mdio/link-status</code><code>GET /api/counter/read</code>
-          <code>GET /api/testcases/status</code><code>GET /api/sequence/full</code>
-          <code>POST /api/sequence/run</code><code>GET /api/logs</code>
+        <!-- ── 2-PC MATRIX TEST ──────────────────────────────────────────────── -->
+        <div class="st-card" style="margin-top:16px;">
+          <div class="st-card-head">
+            2-PC MATRIX TEST <small style="font-weight:400;color:var(--muted);">4 × 2 전체 조합</small>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span id="matrixSt" class="reg-status"></span>
+              <button class="small" id="matrixLoadPorts">↻ 포트맵 로드</button>
+              <button class="small" id="matrixExportCsv">⬇ CSV</button>
+            </div>
+          </div>
+          <div class="st-card-body">
+
+            <!-- URL hint -->
+            <div style="font-size:10px;color:var(--muted);margin-bottom:10px;">
+              사용 URL: <span id="matrixUrlHint" style="font-family:Consolas,monospace;">위 2-PC Experiment 섹션 참조</span>
+            </div>
+
+            <!-- Interface selection -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+              <div>
+                <div class="matrix-node-title">NODE A · 인터페이스 (이 PC)</div>
+                <div id="matrixIfacesA" class="matrix-iface-list">
+                  <span style="color:var(--muted);font-size:10px;">← 포트맵 로드</span>
+                </div>
+              </div>
+              <div>
+                <div class="matrix-node-title">NODE B · 인터페이스 (상대 PC)</div>
+                <div id="matrixIfacesB" class="matrix-iface-list">
+                  <span style="color:var(--muted);font-size:10px;">← 포트맵 로드</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Test params -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+              <div class="field">
+                <label>Direction</label>
+                <select id="matrixDir">
+                  <option value="BOTH">Both (A ↔ B)</option>
+                  <option value="A_TO_B">A → B only</option>
+                  <option value="B_TO_A">B → A only</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Packet Count</label>
+                <input id="matrixCount" type="number" value="10" min="1" max="1000">
+              </div>
+              <div class="field">
+                <label>Interval (ms)</label>
+                <input id="matrixInterval" type="number" value="100" min="0">
+              </div>
+              <div class="field">
+                <label>Capture Timeout (ms)</label>
+                <input id="matrixCapTimeout" type="number" value="3000" min="500">
+              </div>
+            </div>
+
+            <!-- Run / progress -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <button class="primary" id="matrixRun">&#9654; Run All</button>
+              <button class="danger small" id="matrixStop" style="display:none;">&#9632; Stop</button>
+              <span id="matrixProgress" style="font-size:11px;color:var(--muted);"></span>
+            </div>
+            <div id="matrixProgressBarWrap" style="display:none;height:4px;background:var(--border);border-radius:2px;margin-bottom:12px;overflow:hidden;">
+              <div id="matrixProgressFill" style="height:100%;width:0%;background:var(--accent);transition:width .3s;"></div>
+            </div>
+
+            <!-- Results -->
+            <div id="matrixResults" style="display:none;">
+              <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;">RESULTS MATRIX</div>
+              <div id="matrixTableWrap" style="overflow-x:auto;margin-bottom:16px;"></div>
+
+              <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;">DETAILED REPORT</div>
+              <div style="overflow-x:auto;">
+                <table class="fdb-table" style="width:100%;min-width:680px;">
+                  <thead>
+                    <tr>
+                      <th style="width:32px;">#</th>
+                      <th style="width:42px;">A Port</th>
+                      <th>A Interface</th>
+                      <th style="width:42px;">B Port</th>
+                      <th>B Interface</th>
+                      <th style="width:46px;text-align:center;">A→B<br>Sent</th>
+                      <th style="width:46px;text-align:center;">A→B<br>Rcvd</th>
+                      <th style="width:46px;text-align:center;">A→B</th>
+                      <th style="width:46px;text-align:center;">B→A<br>Sent</th>
+                      <th style="width:46px;text-align:center;">B→A<br>Rcvd</th>
+                      <th style="width:46px;text-align:center;">B→A</th>
+                      <th style="width:60px;text-align:center;">Overall</th>
+                    </tr>
+                  </thead>
+                  <tbody id="matrixDetailBody"></tbody>
+                </table>
+              </div>
+              <div id="matrixSummary" style="margin-top:10px;font-size:13px;font-weight:700;"></div>
+            </div>
+
+          </div>
         </div>
 
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <h3>Test / Macro Logs</h3>
-          <button id="refreshLogs" class="small">Refresh</button>
-        </div>
-        <pre class="logbox" id="logsBox">No logs loaded.</pre>
       </div>
     </section>
 
   </div><!-- .content -->
 
-  <!-- Status bar -->
-  <div class="statusbar">
-    <span id="startTime">--</span>
-    <span id="workerStatus">Worker: disconnected</span>
-    <span id="statusExtra" style="margin-left:auto;color:var(--muted);font-size:10px;">○ Serial   ○ Cap 0pkts</span>
-  </div>
 
 </div><!-- .shell -->
 
-<!-- ── Event Palette Modal ────────────────────────────────────────── -->
-<div id="eventModal" class="ev-modal-bg" style="display:none;">
-  <div class="ev-modal">
-    <div class="ev-modal-head">
-      <span id="evModalTitle">Add Event</span>
-      <button id="evModalClose" class="small">✕</button>
-    </div>
-    <div id="evModalBody" class="ev-modal-body"></div>
-    <div class="ev-modal-foot">
-      <button id="evModalOk" class="small primary">Add to Sequence</button>
-      <button id="evModalCancel" class="small">Cancel</button>
-    </div>
-  </div>
-</div>
+<!-- TC floating dropdown (appended to body so it is above all panels) -->
+<div id="pgTcDropdown" class="pg-tc-dropdown" style="display:none;"></div>
 
-<script type="module" src="/app.js"></script>
+<script type="module" src="/app.js?v=20260527f"></script>
 </body>
 </html>

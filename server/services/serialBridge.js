@@ -129,7 +129,7 @@ class SerialSession {
     events.emit('serial', { kind: 'serial', rxType: 'rx', hex, session: this.path });
 
     this.lineBuffer += chunk.toString('utf8');
-    const parts = this.lineBuffer.split(/\r?\n/);
+    const parts = this.lineBuffer.split(/\r\n|\n|\r/);
     this.lineBuffer = parts.pop() ?? '';
     for (const line of parts) {
       const t = line.trim();
@@ -200,17 +200,18 @@ class SttySession {
     const dev  = this.path;
 
     return new Promise((resolve, reject) => {
-      // Configure the port with stty
-      execFile('stty', ['-F', dev,
-        String(baud), 'raw', '-echo',
-        'cs8', '-cstopb', '-parenb',
-        'min', '1', 'time', '0',
-      ], (err) => {
-        if (err) { return reject(new Error(`stty failed: ${err.message}`)); }
-
-        // Open the device for read/write
-        fs.open(dev, fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK, (ferr, fd) => {
-          if (ferr) { return reject(new Error(`Cannot open ${dev}: ${ferr.message}`)); }
+      // 먼저 O_RDWR|O_NOCTTY 로 열어서 termios 설정 후 stty 로 baud rate 설정
+      fs.open(dev, fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK, (ferr, fd) => {
+        if (ferr) { return reject(new Error(`Cannot open ${dev}: ${ferr.message}`)); }
+        // stty로 보레이트 및 모드 설정
+        execFile('stty', ['-F', dev,
+          String(baud), 'raw', '-echo', '-echoe', '-echok',
+          'cs8', '-cstopb', '-parenb', '-crtscts',
+        ], (err) => {
+          if (err) {
+            fs.close(fd, () => {});
+            return reject(new Error(`stty failed: ${err.message}`));
+          }
           this._fd = fd;
           this._startRead();
           events.emit('serial', { kind: 'serial', type: 'opened', session: dev });
@@ -233,6 +234,8 @@ class SttySession {
             return;
           }
           events.emit('serial', { kind: 'serial', type: 'error', message: err.message, session: this.path });
+          // Resume polling after transient error (EIO etc.) instead of stopping permanently
+          setTimeout(readLoop, 500);
           return;
         }
         if (bytesRead > 0) {
@@ -241,7 +244,8 @@ class SttySession {
           events.emit('serial', { kind: 'serial', rxType: 'rx', hex, session: this.path });
 
           this.lineBuffer += chunk.toString('utf8');
-          const parts = this.lineBuffer.split(/\r?\n/);
+          // Handle \r\n, \n, and \r-only line endings
+          const parts = this.lineBuffer.split(/\r\n|\n|\r/);
           this.lineBuffer = parts.pop() ?? '';
           for (const line of parts) {
             const t = line.trim();
@@ -342,8 +346,19 @@ async function open(devPath, opts = {}) {
   let session;
   if (SerialPort) {
     session = new SerialSession(devPath);
-  } else if (os.platform() === 'linux') {
-    // Check stty is available
+    try {
+      await session.open(opts);
+      sessions.set(devPath, session);
+      return { sessionId: devPath, session: devPath };
+    } catch (err) {
+      // serialport fails on some Linux ttyS* drivers (TCSETS2 ioctl not supported)
+      // fall through to stty fallback if on Linux
+      if (os.platform() !== 'linux') throw err;
+      console.warn(`[serialBridge] serialport open failed (${err.message}), retrying with stty fallback`);
+    }
+  }
+
+  if (os.platform() === 'linux') {
     session = new SttySession(devPath);
   } else {
     throw new Error('serialport npm이 설치되지 않았습니다. 실행: npm install serialport');

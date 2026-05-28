@@ -4383,15 +4383,6 @@ async function init() {
 
   // Settings
   $('refreshLogs')?.addEventListener('click', loadLogs);
-  $('settingsWorkerRefresh')?.addEventListener('click', async ()=>{
-    try{const data=await api('/api/register/status');const el=$('settingsWorkerState');if(el)el.textContent=`${data.serialConnected?'● connected':'○ disconnected'}  base: ${data.baseAddress||'—'}`;if($('settingsBaseAddr')&&data.baseAddress)$('settingsBaseAddr').value=data.baseAddress;}
-    catch(err){if($('settingsWorkerState'))$('settingsWorkerState').textContent=`offline: ${err.message}`;}
-  });
-  $('settingsBaseAddrApply')?.addEventListener('click', async ()=>{
-    const val=$('settingsBaseAddr')?.value?.trim();if(!val)return;
-    try{await api('/api/register/base-addr',{method:'POST',body:JSON.stringify({address:val})});if($('settingsBaseAddrSt'))$('settingsBaseAddrSt').textContent='Applied';setTimeout(()=>{if($('settingsBaseAddrSt'))$('settingsBaseAddrSt').textContent='';},2000);await refreshRegStatus();}
-    catch(err){if($('settingsBaseAddrSt'))$('settingsBaseAddrSt').textContent=`Error: ${err.message}`;}
-  });
 
   // Port Map
   $('portmapReload')?.addEventListener('click', loadPortMap);

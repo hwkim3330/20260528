@@ -1,8 +1,7 @@
 'use strict';
 /**
- * nativeWorker.js — Handles worker commands natively (no C# required).
- * Used by localCmd() as fallback when C# worker is disconnected.
- * This makes timestamp, mdio, counter, register, FDB all work on Linux.
+ * nativeWorker.js — Native command dispatcher for Linux.
+ * Handles register, mdio, counter, FDB, capture, send via native services.
  */
 const os = require('os');
 const { buildFrame, normalizeProfile } = require('./frameBuilder');

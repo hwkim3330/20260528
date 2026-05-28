@@ -643,10 +643,19 @@ tr.row-selected td { background: rgba(124,124,255,.15); }
 }
 .filter-bar input { background: var(--bg); flex: 1; }
 .proto-summary {
-  padding: 4px 10px; font-size: 11px; color: var(--muted);
+  padding: 4px 8px; font-size: 11px; color: var(--muted);
   background: var(--surfAlt); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
 }
-.proto-summary span { color: var(--fg); font-weight: 600; }
+.proto-summary span { color: inherit; font-weight: 600; }
+.proto-chip {
+  padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--muted); font-size: 11px;
+  cursor: pointer; user-select: none; transition: background 0.15s, color 0.15s;
+}
+.proto-chip:hover { background: var(--surfHov, var(--border)); color: var(--fg); }
+.proto-chip.active { background: var(--accent, #3b82f6); color: #fff; border-color: var(--accent, #3b82f6); }
+.proto-chip.active span { color: #fff; }
 
 .iface-filters {
   display: flex; flex-wrap: wrap; gap: 6px;
@@ -858,6 +867,45 @@ button.toc-sub.toc-active { color: var(--accent); }
 .matrix-run-bg  { background: rgba(124,124,255,.07); }
 @keyframes matrixPulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 .matrix-anim { animation: matrixPulse 1s ease-in-out infinite; }
+
+/* ── Benchmark ──────────────────────────────────────────────────────────── */
+.bench-checks {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  margin-bottom: 10px; padding: 8px 10px;
+  background: var(--surfAlt); border-radius: 6px; border: 1px solid var(--border);
+}
+.bench-check-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; cursor: pointer; user-select: none;
+}
+.bench-log {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+  padding: 8px 10px; font-size: 11px; font-family: Consolas, monospace;
+  max-height: 180px; overflow-y: auto; line-height: 1.7;
+}
+.bench-log .ok   { color: #22c55e; }
+.bench-log .warn { color: #f59e0b; }
+.bench-log .err  { color: #ef4444; }
+.bench-log .dim  { color: var(--muted); }
+.bench-stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;
+}
+.bench-stat {
+  background: var(--surfAlt); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; text-align: center;
+}
+.bench-stat.ok  { border-color: #22c55e44; background: #22c55e10; }
+.bench-stat.warn{ border-color: #f59e0b44; background: #f59e0b10; }
+.bench-stat.bad { border-color: #ef444444; background: #ef444410; }
+.bs-label { font-size: 9px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.bs-val   { font-size: 20px; font-weight: 700; }
+.bs-unit  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.bench-bar-wrap { margin-top: 12px; }
+.bench-bar-row  { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+.bench-bar-label{ width: 90px; text-align: right; color: var(--muted); flex-shrink: 0; }
+.bench-bar-track{ flex: 1; height: 14px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.bench-bar-fill { height: 100%; border-radius: 3px; transition: width .5s; }
+.bench-bar-val  { width: 55px; font-family: Consolas, monospace; }
 
 /* TX frame badge in Capture tab */
 .dir-tx-badge {

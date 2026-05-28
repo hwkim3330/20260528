@@ -1590,7 +1590,7 @@ function formatCaptureRow(r) {
   if      (udp.srcPort  !== undefined) protocol = 'UDP';
   else if (tcp.srcPort  !== undefined) protocol = 'TCP';
   else if (icmp.type    !== undefined) protocol = 'ICMP';
-  else if (arp.operation !== undefined) protocol = 'ARP';
+  else if (arp.op !== undefined || arp.operation !== undefined) protocol = 'ARP';
   else if (ip.src)                     protocol = 'IPv4';
 
   let source = ip.src  || eth.srcMac || '';
@@ -1602,7 +1602,10 @@ function formatCaptureRow(r) {
   if (udp.srcPort !== undefined)        info = `${udp.srcPort} → ${udp.dstPort}  Len=${r.length}`;
   else if (tcp.srcPort !== undefined)   info = `${tcp.srcPort} → ${tcp.dstPort}`;
   else if (icmp.type !== undefined)     info = `Type=${icmp.type} Code=${icmp.code || 0}`;
-  else if (arp.operation !== undefined) info = arp.operation === 1 ? `Who has ${arp.targetIp}? Tell ${arp.senderIp}` : `${arp.senderIp} is at ${arp.senderMac}`;
+  else if (arp.op !== undefined || arp.operation !== undefined) {
+    const isRequest = arp.op === 'request' || arp.op === 1 || arp.operation === 1;
+    info = isRequest ? `Who has ${arp.targetIp}? Tell ${arp.senderIp}` : `${arp.senderIp} is at ${arp.senderMac}`;
+  }
   else if (eth.etherType)               info = `EtherType=0x${Number(eth.etherType).toString(16).toUpperCase().padStart(4,'0')}`;
 
   const d = new Date((r.timestamp || 0) * 1000);
@@ -4319,7 +4322,14 @@ async function init() {
   $('captureStop')?.addEventListener('click', stopCapture);
   $('captureClear')?.addEventListener('click', clearCapture);
   $('captureExportCsv')?.addEventListener('click', downloadCaptureCsv);
-  $('captureFilter')?.addEventListener('input', renderCaptureRows);
+  $('captureFilter')?.addEventListener('input', () => {
+    const val = ($('captureFilter')?.value || '').trim();
+    document.querySelectorAll('.proto-chip').forEach(b => b.classList.remove('active'));
+    const exact = [...document.querySelectorAll('.proto-chip')].find(b => (b.dataset.proto||'').toLowerCase() === val.toLowerCase());
+    if (exact) exact.classList.add('active');
+    else if (!val) document.querySelector('.proto-chip[data-proto=""]')?.classList.add('active');
+    renderCaptureRows();
+  });
 
   document.querySelectorAll('.proto-chip').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -4328,6 +4338,7 @@ async function init() {
       const f=$('captureFilter');if(f){f.value=btn.dataset.proto||'';renderCaptureRows();}
     });
   });
+  document.querySelector('.proto-chip[data-proto=""]')?.classList.add('active');
 
   // Scenario Lab
   $('tcRefresh')?.addEventListener('click', loadTestCases);
@@ -4404,6 +4415,12 @@ async function init() {
   $('matrixRun')?.addEventListener('click', runMatrixTest);
   $('matrixStop')?.addEventListener('click', () => { _matrixAbort = true; });
   $('matrixExportCsv')?.addEventListener('click', exportMatrixCsv);
+
+  // Benchmark
+  $('benchLoadPorts')?.addEventListener('click', benchLoadPorts);
+  $('benchRun')?.addEventListener('click', runBenchmark);
+  $('benchStop')?.addEventListener('click', () => { _benchAbort = true; });
+  $('benchExportReport')?.addEventListener('click', exportBenchmarkReport);
 
   try {
     await api('/api/health');
@@ -4537,7 +4554,12 @@ function initApp() {
 
   // Capture extras
   $('captureFilterApply')?.addEventListener('click', renderCaptureRows);
-  $('captureFilterClear')?.addEventListener('click', () => { const f = $('captureFilter'); if (f) f.value = ''; renderCaptureRows(); });
+  $('captureFilterClear')?.addEventListener('click', () => {
+    const f = $('captureFilter'); if (f) f.value = '';
+    document.querySelectorAll('.proto-chip').forEach(b => b.classList.remove('active'));
+    document.querySelector('.proto-chip[data-proto=""]')?.classList.add('active');
+    renderCaptureRows();
+  });
   $('copyPacketDetails')?.addEventListener('click', () => {
     navigator.clipboard?.writeText($('packetDetails')?.textContent || '').then(() => toast('Copied!', 'ok'));
   });
@@ -4979,4 +5001,679 @@ function exportMatrixCsv() {
   const a = document.createElement('a');
   a.href = url; a.download = `matrix_${new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')}.csv`;
   a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Benchmark ─────────────────────────────────────────────────────────────────
+let _benchAbort = false;
+let _benchResult = null;
+let _benchParams = null;
+
+// Benchmark uses fixed UDP dst port so BPF filter is exact
+const BENCH_DST_PORT = 50002;
+const BENCH_BPF = `udp and dst port ${BENCH_DST_PORT}`;
+
+function _strHex(str) {
+  return Array.from(str).map(c => c.charCodeAt(0).toString(16).padStart(2,'0')).join('');
+}
+function _pct(sorted, p) {
+  if (!sorted.length) return null;
+  return sorted[Math.min(Math.floor(sorted.length * p / 100), sorted.length - 1)];
+}
+function _hdr() { return { 'Content-Type': 'application/json' }; }
+function _to(ms)  { return { signal: AbortSignal.timeout(ms) }; }
+
+async function _benchFetch(url, method = 'GET', body = null) {
+  try {
+    const opts = { method, headers: _hdr(), ..._to(30000) };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(url, opts);
+    if (!r.ok) return {};
+    return await r.json();
+  } catch { return {}; }
+}
+
+// Look up MAC of a specific interface from portmap (for unicast sending)
+function _benchGetMac(iface, isRemote) {
+  const entry = (state.portmap || []).find(e =>
+    e.iface === iface && (isRemote ? !!e.nodeUrl : !e.nodeUrl)
+  );
+  return entry?.mac || 'FF:FF:FF:FF:FF:FF';
+}
+
+function _benchIsRemote(url) {
+  const origin = window.location.origin;
+  return url && url !== origin && !url.includes('localhost') && !url.includes('127.0.0.1');
+}
+
+async function _benchSend(url, iface, count, intervalMs, payloadSize, marker, dstMac = 'FF:FF:FF:FF:FF:FF') {
+  const pad  = Math.max(0, payloadSize - marker.length);
+  const data = marker + 'A'.repeat(pad);
+  return _benchFetch(`${url}/api/send`, 'POST', {
+    interface: iface, protocol: 'udp',
+    dstMac,
+    srcIp: '169.254.0.1', dstIp: '169.254.0.2',
+    srcPort: 40002, dstPort: BENCH_DST_PORT,
+    count, intervalMs,
+    payload: { mode: 'text', data }
+  });
+}
+
+function _matchMarker(rows, marker) {
+  const mHex = _strHex(marker);
+  return rows.filter(r =>
+    JSON.stringify(r.decoded || {}).includes(marker) ||
+    (r.frameHex || '').includes(mHex)
+  );
+}
+
+// Deduplicate captured rows by timestamp (1 ms resolution).
+// Fixes switch-level broadcast duplication where the same physical frame
+// arrives at multiple ports and is captured multiple times.
+// Works correctly when intervalMs >= 1 (each packet has a unique ms timestamp).
+function _dedupByTimestamp(matched) {
+  const seen = new Set();
+  let count = 0;
+  for (const row of matched) {
+    const ts1ms = Math.round((row.timestamp || 0) * 1000);
+    if (!seen.has(ts1ms)) { seen.add(ts1ms); count++; }
+  }
+  return count;
+}
+
+async function runBenchPDR(sUrl, sIface, rUrl, rIface, count, intervalMs, payloadSize, capMs) {
+  const rIsRemote = _benchIsRemote(rUrl);
+  const dstMac    = _benchGetMac(rIface, rIsRemote);
+
+  const marker = `BMPDR${Date.now()}${Math.random().toString(36).slice(2,5)}`;
+  await _benchFetch(`${rUrl}/api/capture/clear`, 'POST', {});
+  await _benchFetch(`${rUrl}/api/capture/start`, 'POST', {
+    interfaces: [rIface], bpfFilter: BENCH_BPF
+  });
+  await new Promise(r => setTimeout(r, 500));
+
+  const t0 = Date.now();
+  await _benchSend(sUrl, sIface, count, intervalMs, payloadSize, marker, dstMac);
+  const sendMs = Date.now() - t0;
+
+  await new Promise(r => setTimeout(r, Math.min(capMs, 8000)));
+  await _benchFetch(`${rUrl}/api/capture/stop`, 'POST', {});
+
+  const capData  = await _benchFetch(`${rUrl}/api/capture/packets?limit=5000`);
+  const rows     = capData.rows || [];
+  const matched  = _matchMarker(rows, marker);
+
+  // Use timestamp dedup when interval >= 1ms; raw count otherwise
+  const received = intervalMs >= 1 ? _dedupByTimestamp(matched) : matched.length;
+
+  const pdr     = count > 0 ? Math.min(100, (received / count) * 100) : 0;
+  const sendSec = Math.max(sendMs / 1000, 0.001);
+  const frameB  = payloadSize + 42;
+  const pps     = received / sendSec;
+  const mbps    = pps * frameB * 8 / 1e6;
+
+  return {
+    sent: count, received, lost: Math.max(0, count - received),
+    pdr:  Math.round(pdr * 10) / 10,
+    pps:  Math.round(pps),
+    mbps: Math.round(mbps * 100) / 100,
+    sendMs, dstMac,
+  };
+}
+
+async function runBenchLatency(sUrl, sIface, rUrl, rIface, iterations, capMs) {
+  const rIsRemote = _benchIsRemote(rUrl);
+  const dstMac    = _benchGetMac(rIface, rIsRemote);
+  const samples   = [];
+
+  await _benchFetch(`${rUrl}/api/capture/clear`, 'POST', {});
+  await _benchFetch(`${rUrl}/api/capture/start`, 'POST', {
+    interfaces: [rIface], bpfFilter: BENCH_BPF
+  });
+  await new Promise(r => setTimeout(r, 500));
+
+  for (let i = 0; i < iterations; i++) {
+    if (_benchAbort) break;
+    const marker = `BMLAT${Date.now()}${i}`;
+    const t0 = Date.now();
+    await _benchSend(sUrl, sIface, 1, 0, 64, marker, dstMac);
+
+    let found = false;
+    for (let p = 0; p < 40 && !found; p++) {
+      await new Promise(r => setTimeout(r, 30));
+      const d = await _benchFetch(`${rUrl}/api/capture/packets?limit=1000`);
+      if (_matchMarker(d.rows || [], marker).length) {
+        samples.push(Date.now() - t0);
+        found = true;
+      }
+    }
+    if (!found) samples.push(null);
+  }
+
+  await _benchFetch(`${rUrl}/api/capture/stop`, 'POST', {});
+
+  const valid = samples.filter(s => s !== null).sort((a, b) => a - b);
+  if (!valid.length) return { error: 'no packets received', iterations, valid: 0, samples: [] };
+
+  const avg    = valid.reduce((a, b) => a + b, 0) / valid.length;
+  const jitter = valid.reduce((s, v) => s + Math.abs(v - avg), 0) / valid.length;
+
+  return {
+    iterations, valid: valid.length, lost: iterations - valid.length,
+    min: valid[0], max: valid[valid.length - 1],
+    avg:    Math.round(avg    * 10) / 10,
+    jitter: Math.round(jitter * 10) / 10,
+    p50: _pct(valid, 50), p95: _pct(valid, 95), p99: _pct(valid, 99),
+    samples: valid,
+  };
+}
+
+function _benchLog(msg, cls = '') {
+  const el = $('benchLog');
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function _benchScore(results) {
+  const pdr = results.pdr || {};
+  const lat = (results.latency?.atob) || {};
+  const sw  = results.frameSweep?.sizes || [];
+
+  let pts = 0, max = 0;
+
+  // PDR score (40 pts)
+  if (pdr.atob != null) {
+    max += 20;
+    pts += pdr.atob.pdr >= 99.9 ? 20 : pdr.atob.pdr >= 99 ? 18 : pdr.atob.pdr >= 95 ? 14 : pdr.atob.pdr >= 90 ? 10 : 5;
+  }
+  if (pdr.btoa != null) {
+    max += 20;
+    pts += pdr.btoa.pdr >= 99.9 ? 20 : pdr.btoa.pdr >= 99 ? 18 : pdr.btoa.pdr >= 95 ? 14 : pdr.btoa.pdr >= 90 ? 10 : 5;
+  }
+
+  // Latency score (30 pts) — software RTT so thresholds are generous
+  if (lat.avg != null) {
+    max += 15;
+    pts += lat.avg <= 50 ? 15 : lat.avg <= 100 ? 12 : lat.avg <= 200 ? 8 : lat.avg <= 500 ? 4 : 1;
+    max += 15;
+    const j = lat.jitter ?? lat.avg;
+    pts += j <= 5 ? 15 : j <= 15 ? 12 : j <= 30 ? 8 : j <= 60 ? 4 : 1;
+  }
+
+  // Frame sweep score (30 pts) — all sizes PDR
+  if (sw.length) {
+    max += 30;
+    const avgPdr = sw.reduce((s, v) => s + v.pdr, 0) / sw.length;
+    pts += avgPdr >= 99.9 ? 30 : avgPdr >= 99 ? 26 : avgPdr >= 95 ? 20 : avgPdr >= 90 ? 14 : 7;
+  }
+
+  const total = max > 0 ? Math.round(pts / max * 100) : 0;
+  const grade = total >= 90 ? 'EXCELLENT' : total >= 75 ? 'GOOD' : total >= 55 ? 'FAIR' : 'POOR';
+  const color = total >= 90 ? '#22c55e' : total >= 75 ? '#3b82f6' : total >= 55 ? '#f59e0b' : '#ef4444';
+  return { total, grade, color };
+}
+
+function _benchProgress(pct, label) {
+  const fill = $('benchProgressFill');
+  const lbl  = $('benchProgressLabel');
+  const pctEl = $('benchProgressPct');
+  if (fill) fill.style.width = pct + '%';
+  if (lbl)  lbl.textContent  = label;
+  if (pctEl) pctEl.textContent = pct + '%';
+}
+
+async function benchLoadPorts() {
+  await _loadPortmapSilent();
+  const urlEl = $('benchUrlA'); if (urlEl) urlEl.value = window.location.origin;
+  const bUrl  = state.portmap.find(e => e.nodeUrl)?.nodeUrl || '';
+  const bEl   = $('benchUrlB'); if (bEl && bUrl) bEl.value = bUrl;
+
+  // A interfaces
+  const selA  = $('benchIfaceA');
+  const selB  = $('benchIfaceB');
+  if (selA) {
+    selA.innerHTML = '<option value="">— 선택 —</option>' +
+      state.interfaces.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('');
+  }
+  if (selB) {
+    const remotes = state.portmapRemoteIfaces.length ? state.portmapRemoteIfaces : [];
+    selB.innerHTML = '<option value="">— 선택 —</option>' +
+      remotes.map(i => `<option value="${esc(i.name)}">${esc(i.name)}</option>`).join('');
+  }
+  // Auto-select first mapped interface from portmap
+  const aEntry = state.portmap.find(e => !e.nodeUrl && e.iface);
+  const bEntry = state.portmap.find(e =>  e.nodeUrl && e.iface);
+  if (aEntry && selA) selA.value = aEntry.iface;
+  if (bEntry && selB) selB.value = bEntry.iface;
+  toast('포트맵 로드 완료', 'ok');
+}
+
+async function runBenchmark() {
+  const nodeAUrl  = ($('benchUrlA')?.value || '').trim() || window.location.origin;
+  const nodeBUrl  = ($('benchUrlB')?.value || '').trim();
+  const nodeAIface = $('benchIfaceA')?.value || '';
+  const nodeBIface = $('benchIfaceB')?.value || '';
+  if (!nodeBUrl || !nodeAIface || !nodeBIface) {
+    return toast('Node B URL과 인터페이스(A,B)를 설정하세요', 'bad');
+  }
+
+  const tests = {
+    pdr:       $('benchTestPdr')?.checked     ?? true,
+    latency:   $('benchTestLatency')?.checked ?? true,
+    frameSweep:$('benchTestSweep')?.checked   ?? true,
+  };
+  const count    = parseInt($('benchCount')?.value)      || 100;
+  const iMs      = parseInt($('benchInterval')?.value)   || 1;
+  const latIters = parseInt($('benchLatIters')?.value)   || 30;
+  const capMs    = parseInt($('benchCapTimeout')?.value) || 5000;
+
+  _benchAbort  = false;
+  _benchResult = null;
+  _benchParams = { nodeAUrl, nodeBUrl, nodeAIface, nodeBIface };
+
+  $('benchRun').style.display         = 'none';
+  $('benchStop').style.display        = 'inline';
+  $('benchProgressWrap').style.display = 'block';
+  $('benchLog').style.display          = 'block';
+  $('benchLog').innerHTML              = '';
+  $('benchResultsWrap').style.display  = 'none';
+  $('benchExportReport').style.display = 'none';
+
+  const sizes     = [64, 256, 512, 1024, 1400];
+  const totalSteps = (tests.pdr ? 2 : 0) + (tests.latency ? 1 : 0) + (tests.frameSweep ? sizes.length : 0);
+  let step = 0;
+
+  function nextStep(label) {
+    step++;
+    _benchProgress(Math.round(step / totalSteps * 100), label);
+    _benchLog('▶ ' + label, 'dim');
+  }
+
+  const res = { startedAt: new Date().toISOString(), results: {} };
+
+  try {
+    // ── PDR ───────────────────────────────────────────────────────────────────
+    if (tests.pdr && !_benchAbort) {
+      nextStep('PDR/Throughput: A → B ...');
+      const atob = await runBenchPDR(nodeAUrl, nodeAIface, nodeBUrl, nodeBIface, count, iMs, 64, capMs);
+      _benchLog(`  A→B: PDR ${atob.pdr}%  (sent ${atob.sent}, rcvd ${atob.received}, loss ${atob.lost})  ${atob.mbps} Mbps`,
+                atob.pdr >= 99 ? 'ok' : atob.pdr >= 80 ? 'warn' : 'err');
+
+      if (!_benchAbort) {
+        nextStep('PDR/Throughput: B → A ...');
+        const btoa = await runBenchPDR(nodeBUrl, nodeBIface, nodeAUrl, nodeAIface, count, iMs, 64, capMs);
+        _benchLog(`  B→A: PDR ${btoa.pdr}%  (sent ${btoa.sent}, rcvd ${btoa.received}, loss ${btoa.lost})  ${btoa.mbps} Mbps`,
+                  btoa.pdr >= 99 ? 'ok' : btoa.pdr >= 80 ? 'warn' : 'err');
+        res.results.pdr = { atob, btoa };
+      }
+    }
+
+    // ── Latency ───────────────────────────────────────────────────────────────
+    if (tests.latency && !_benchAbort) {
+      nextStep(`Latency: A→B (${latIters}회) ...`);
+      const lat = await runBenchLatency(nodeAUrl, nodeAIface, nodeBUrl, nodeBIface, latIters, capMs);
+      if (lat.error) {
+        _benchLog('  Latency: ' + lat.error, 'err');
+      } else {
+        _benchLog(`  min ${lat.min}ms  avg ${lat.avg}ms  p95 ${lat.p95}ms  max ${lat.max}ms  (valid ${lat.valid}/${lat.iterations})`);
+      }
+      res.results.latency = { atob: lat };
+    }
+
+    // ── Frame Sweep ───────────────────────────────────────────────────────────
+    if (tests.frameSweep && !_benchAbort) {
+      res.results.frameSweep = { sizes: [] };
+      for (const sz of sizes) {
+        if (_benchAbort) break;
+        nextStep(`Frame Sweep: ${sz}B 페이로드 ...`);
+        const r = await runBenchPDR(nodeAUrl, nodeAIface, nodeBUrl, nodeBIface, 50, 2, sz, capMs);
+        _benchLog(`  ${sz}B: PDR ${r.pdr}%  PPS ${r.pps}  ${r.mbps} Mbps`,
+                  r.pdr >= 99 ? 'ok' : r.pdr >= 80 ? 'warn' : 'err');
+        res.results.frameSweep.sizes.push({ payloadBytes: sz, ...r });
+      }
+    }
+
+    res.finishedAt = new Date().toISOString();
+    res.score = _benchScore(res.results);
+    _benchLog(_benchAbort ? '⊘ 중단됨' : `✓ 완료 — 종합 점수: ${res.score.grade} (${res.score.total}/100)`,
+              _benchAbort ? 'warn' : 'ok');
+    _benchResult = res;
+    _renderBenchResults(res);
+    $('benchResultsWrap').style.display  = 'block';
+    $('benchExportReport').style.display = 'inline';
+
+  } catch (e) {
+    _benchLog('✗ Error: ' + e.message, 'err');
+  }
+
+  $('benchRun').style.display  = 'inline';
+  $('benchStop').style.display = 'none';
+  _benchProgress(100, _benchAbort ? '중단됨' : '완료');
+}
+
+function _renderBenchResults(res) {
+  const r     = res.results || {};
+  const pdr   = r.pdr      || {};
+  const lat   = (r.latency?.atob) || {};
+  const sw    = r.frameSweep?.sizes || [];
+  const score = res.score  || _benchScore(r);
+
+  // ── Score banner ─────────────────────────────────────────────────────────
+  const statEl = $('benchStatCards');
+  if (statEl) {
+    function card(label, val, unit, cls) {
+      return `<div class="bench-stat ${cls}"><div class="bs-label">${label}</div><div class="bs-val">${val}</div><div class="bs-unit">${unit}</div></div>`;
+    }
+    const pdrA   = pdr.atob?.pdr  ?? null;
+    const pdrB   = pdr.btoa?.pdr  ?? null;
+    const lossA  = pdr.atob?.lost ?? null;
+    const mbpsA  = pdr.atob?.mbps ?? null;
+    const latAvg = lat.avg    ?? null;
+    const latP95 = lat.p95    ?? null;
+    const jitter = lat.jitter ?? null;
+
+    const scoreBanner = `<div class="bench-stat" style="border-color:${score.color}44;background:${score.color}10;grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;">
+      <div>
+        <div class="bs-label">종합 점수</div>
+        <div style="font-size:28px;font-weight:800;color:${score.color};">${score.total}<span style="font-size:14px;font-weight:500;color:var(--muted);">/100</span></div>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:${score.color};">${score.grade}</div>
+    </div>`;
+
+    statEl.innerHTML = scoreBanner +
+      (pdrA  !== null ? card('PDR A→B',      pdrA,  '%',   pdrA >=99?'ok':pdrA >=80?'warn':'bad') : '') +
+      (pdrB  !== null ? card('PDR B→A',      pdrB,  '%',   pdrB >=99?'ok':pdrB >=80?'warn':'bad') : '') +
+      (lossA !== null ? card('Loss A→B',     lossA, 'pkts',lossA===0?'ok':lossA<5?'warn':'bad')   : '') +
+      (mbpsA !== null ? card('Throughput A→B',mbpsA,'Mbps','')                                     : '') +
+      (latAvg!== null ? card('Latency avg',  latAvg,'ms',  '')                                     : '') +
+      (latP95!== null ? card('Latency p95',  latP95,'ms',  '')                                     : '') +
+      (jitter!== null ? card('Jitter',       jitter,'ms',  jitter<=10?'ok':jitter<=30?'warn':'bad'): '');
+  }
+
+  // ── Bar charts (CSS) ──────────────────────────────────────────────────────
+  const chartEl = $('benchChartWrap');
+  if (!chartEl) return;
+  let html = '';
+
+  if (pdr.atob || pdr.btoa) {
+    html += '<div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;">PDR (%)</div><div class="bench-bar-wrap">';
+    [['A → B', pdr.atob], ['B → A', pdr.btoa]].filter(x => x[1]).forEach(([lbl, v]) => {
+      const col = v.pdr >= 99 ? '#22c55e' : v.pdr >= 80 ? '#f59e0b' : '#ef4444';
+      html += `<div class="bench-bar-row">
+        <div class="bench-bar-label">${lbl}</div>
+        <div class="bench-bar-track"><div class="bench-bar-fill" style="width:${v.pdr}%;background:${col};"></div></div>
+        <div class="bench-bar-val">${v.pdr}%&nbsp;<span style="font-size:9px;color:var(--muted);">(${v.pps} pps · ${v.mbps} Mbps)</span></div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (lat.avg != null) {
+    html += '<div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin:10px 0 6px;">Latency A→B (ms) — 소프트웨어 RTT</div><div class="bench-bar-wrap">';
+    [['min', lat.min,'#22c55e'], ['avg', lat.avg,'#3b82f6'], ['p50', lat.p50,'#3b82f6'],
+     ['p95', lat.p95,'#f59e0b'], ['p99', lat.p99,'#f59e0b'], ['max', lat.max,'#ef4444'],
+     ['jitter', lat.jitter,'#a855f7']].filter(x => x[1] != null).forEach(([lbl, val, col]) => {
+      const pct = Math.min(100, (val / (lat.max || 1)) * 100);
+      html += `<div class="bench-bar-row">
+        <div class="bench-bar-label">${lbl}</div>
+        <div class="bench-bar-track"><div class="bench-bar-fill" style="width:${pct}%;background:${col};"></div></div>
+        <div class="bench-bar-val">${val} ms</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (sw.length) {
+    html += '<div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin:10px 0 6px;">Frame Size Sweep</div>';
+    html += '<div style="overflow-x:auto;"><table class="fdb-table" style="width:100%;min-width:500px;">';
+    html += '<thead><tr><th>Payload</th><th>Frame</th><th>Sent</th><th>Rcvd</th><th>PDR %</th><th>PPS</th><th>Mbps</th></tr></thead><tbody>';
+    sw.forEach(s => {
+      const col = s.pdr >= 99 ? '#22c55e' : s.pdr >= 80 ? '#f59e0b' : '#ef4444';
+      html += `<tr><td>${s.payloadBytes}B</td><td>${s.payloadBytes+42}B</td><td>${s.sent}</td><td>${s.received}</td>
+        <td style="color:${col};font-weight:600;">${s.pdr}%</td><td>${s.pps}</td><td>${s.mbps}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  chartEl.innerHTML = html;
+}
+
+function exportBenchmarkReport() {
+  if (!_benchResult || !_benchParams) return toast('먼저 벤치마크를 실행하세요', 'bad');
+  const html = _buildBenchReport(_benchParams, _benchResult);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `benchmark_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function _buildBenchReport(params, res) {
+  const r     = res.results || {};
+  const pdr   = r.pdr       || {};
+  const lat   = (r.latency?.atob) || {};
+  const sw    = r.frameSweep?.sizes || [];
+  const score = res.score || _benchScore(r);
+  const H     = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const pdrLabels = JSON.stringify(['A → B','B → A']);
+  const pdrData   = JSON.stringify([pdr.atob?.pdr??0, pdr.btoa?.pdr??0]);
+  const pdrColors = JSON.stringify([(pdr.atob?.pdr??0)>=99?'#22c55e':(pdr.atob?.pdr??0)>=80?'#f59e0b':'#ef4444',
+                                     (pdr.btoa?.pdr??0)>=99?'#22c55e':(pdr.btoa?.pdr??0)>=80?'#f59e0b':'#ef4444']);
+  const latSamples = JSON.stringify(lat.samples || []);
+  const swLabels  = JSON.stringify(sw.map(s => s.payloadBytes+'B'));
+  const swPdr     = JSON.stringify(sw.map(s => s.pdr));
+  const swMbps    = JSON.stringify(sw.map(s => s.mbps));
+
+  const ts    = new Date(res.startedAt).toLocaleString('ko-KR');
+  const tsEnd = new Date(res.finishedAt || res.startedAt).toLocaleString('ko-KR');
+  const durSec = res.finishedAt
+    ? Math.round((new Date(res.finishedAt) - new Date(res.startedAt)) / 1000)
+    : '?';
+
+  // Build latency histogram buckets
+  const latHistBuckets = [];
+  if (lat.samples?.length) {
+    const step = Math.max(5, Math.ceil((lat.max - lat.min) / 10));
+    for (let v = lat.min; v <= lat.max + step; v += step) {
+      latHistBuckets.push({ label: `${v}ms`, count: 0, start: v, end: v + step });
+    }
+    lat.samples.forEach(s => {
+      const b = latHistBuckets.find(b => s >= b.start && s < b.end);
+      if (b) b.count++;
+    });
+  }
+
+  return `<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Benchmark Report — ${H(ts)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:28px 32px;min-width:720px}
+h1{font-size:22px;font-weight:700;margin-bottom:4px;color:#f1f5f9}
+.meta{font-size:11px;color:#64748b;margin-bottom:24px;line-height:1.8}
+.section{font-size:10px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:20px 0 10px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.grid-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px}
+.card{background:#1e293b;border-radius:8px;padding:16px;border:1px solid #334155}
+.card-title{font-size:10px;font-weight:600;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+.stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;text-align:center}
+.stat.ok{border-color:#22c55e66;background:#22c55e0a}
+.stat.warn{border-color:#f59e0b66;background:#f59e0b0a}
+.stat.bad{border-color:#ef444466;background:#ef44440a}
+.sl{font-size:9px;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.sv{font-size:22px;font-weight:700}
+.su{font-size:10px;color:#94a3b8;margin-top:2px}
+.ok{color:#22c55e}.warn{color:#f59e0b}.bad{color:#ef4444}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#0f172a;color:#64748b;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid #334155;text-align:left}
+td{padding:8px 10px;border-bottom:1px solid #1e293b}
+tr:last-child td{border-bottom:none}
+.footer{margin-top:36px;font-size:10px;color:#334155;text-align:center;border-top:1px solid #1e293b;padding-top:14px}
+canvas{max-height:260px}
+</style></head>
+<body>
+<h1>PacketLabManager — Benchmark Report</h1>
+<div class="meta">
+  Node A: <strong>${H(params.nodeAUrl)}</strong> &nbsp;(${H(params.nodeAIface)}) &nbsp;|&nbsp;
+  Node B: <strong>${H(params.nodeBUrl)}</strong> &nbsp;(${H(params.nodeBIface)})<br>
+  시작: ${H(ts)} &nbsp;|&nbsp; 완료: ${H(tsEnd)} &nbsp;|&nbsp; 소요: ${durSec}초
+</div>
+
+<!-- Score banner -->
+<div style="display:flex;align-items:center;gap:20px;background:#1e293b;border:2px solid ${score.color}44;border-radius:10px;padding:16px 24px;margin-bottom:20px;">
+  <div style="font-size:52px;font-weight:800;color:${score.color};line-height:1;">${score.total}</div>
+  <div>
+    <div style="font-size:10px;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px;">종합 점수</div>
+    <div style="font-size:24px;font-weight:800;color:${score.color};">${score.grade}</div>
+    <div style="font-size:11px;color:#64748b;">PDR·Latency·FrameSweep 기반 100점 만점</div>
+  </div>
+</div>
+
+<div class="section">Summary</div>
+<div class="grid-stats">
+  ${[
+    ['PDR A→B','%', pdr.atob?.pdr??'—', (pdr.atob?.pdr??0)>=99?'ok':(pdr.atob?.pdr??0)>=80?'warn':'bad'],
+    ['PDR B→A','%', pdr.btoa?.pdr??'—', (pdr.btoa?.pdr??0)>=99?'ok':(pdr.btoa?.pdr??0)>=80?'warn':'bad'],
+    ['Loss A→B','pkts', pdr.atob?.lost??'—', (pdr.atob?.lost||0)===0?'ok':(pdr.atob?.lost||0)<5?'warn':'bad'],
+    ['Throughput A→B','Mbps', pdr.atob?.mbps??'—',''],
+    ['PPS A→B','pps', pdr.atob?.pps??'—',''],
+    ['Latency avg','ms', lat.avg??'—',''],
+    ['Latency p50','ms', lat.p50??'—',''],
+    ['Latency p95','ms', lat.p95??'—',''],
+    ['Jitter','ms', lat.jitter??'—', (lat.jitter??99)<=10?'ok':(lat.jitter??99)<=30?'warn':'bad'],
+  ].map(([l,u,v,c])=>`<div class="stat ${c}"><div class="sl">${H(l)}</div><div class="sv">${H(String(v))}</div><div class="su">${H(u)}</div></div>`).join('')}
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Packet Delivery Rate (%)</div>
+    <canvas id="cPdr"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">Latency A→B — RTT Trend (ms)</div>
+    <canvas id="cLat"></canvas>
+  </div>
+</div>
+${latHistBuckets.length ? `
+<div class="grid-2" style="margin-bottom:14px;">
+  <div class="card">
+    <div class="card-title">Latency Distribution (Histogram)</div>
+    <canvas id="cLatHist"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">Latency Percentiles (ms)</div>
+    <canvas id="cLatPct"></canvas>
+  </div>
+</div>` : ''}
+
+${sw.length ? `
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Frame Size Sweep — PDR (%)</div>
+    <canvas id="cSwPdr"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">Frame Size Sweep — Throughput (Mbps)</div>
+    <canvas id="cSwMbps"></canvas>
+  </div>
+</div>` : ''}
+
+<div class="section">PDR Detail</div>
+<div class="card" style="margin-bottom:14px;">
+<table><thead><tr><th>Direction</th><th>Sent</th><th>Received</th><th>Lost</th><th>PDR %</th><th>PPS</th><th>Throughput</th></tr></thead><tbody>
+${[['A → B', pdr.atob], ['B → A', pdr.btoa]].filter(x=>x[1]).map(([d,v])=>`
+<tr><td>${d}</td><td>${v.sent}</td><td>${v.received}</td><td class="${v.lost===0?'ok':v.lost<5?'warn':'bad'}">${v.lost}</td>
+<td class="${v.pdr>=99?'ok':v.pdr>=80?'warn':'bad'}">${v.pdr}%</td><td>${v.pps}</td><td>${v.mbps} Mbps</td></tr>`).join('')}
+</tbody></table></div>
+
+${lat.avg != null ? `
+<div class="section">Latency Statistics (A→B)</div>
+<div class="card" style="margin-bottom:14px;">
+<table><thead><tr><th>지표</th><th>값 (ms)</th></tr></thead><tbody>
+${[['Min',lat.min],['Max',lat.max],['Avg',lat.avg],['P50 (Median)',lat.p50],['P95',lat.p95],['P99',lat.p99],['Valid / Total', lat.valid+' / '+lat.iterations]]
+  .map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}
+</tbody></table>
+<div style="font-size:10px;color:#475569;margin-top:8px;">* 소프트웨어 RTT: 패킷 전송 API 호출 → 수신 캡처 버퍼에서 확인까지의 시간 (네트워크 지연 + 캡처/폴링 오버헤드 포함)</div>
+</div>` : ''}
+
+${sw.length ? `
+<div class="section">Frame Size Sweep Detail</div>
+<div class="card" style="margin-bottom:14px;">
+<table><thead><tr><th>Payload</th><th>Frame</th><th>Sent</th><th>Rcvd</th><th>PDR %</th><th>PPS</th><th>Mbps</th></tr></thead><tbody>
+${sw.map(s=>`<tr><td>${s.payloadBytes}B</td><td>${s.payloadBytes+42}B</td><td>${s.sent}</td><td>${s.received}</td>
+<td class="${s.pdr>=99?'ok':s.pdr>=80?'warn':'bad'}">${s.pdr}%</td><td>${s.pps}</td><td>${s.mbps}</td></tr>`).join('')}
+</tbody></table></div>` : ''}
+
+<div class="footer">
+  PacketLabManager Benchmark &nbsp;|&nbsp; ${H(ts)} &nbsp;|&nbsp;
+  Node A: ${H(params.nodeAUrl)} (${H(params.nodeAIface)}) → Node B: ${H(params.nodeBUrl)} (${H(params.nodeBIface)})
+</div>
+
+<script>
+Chart.defaults.color='#94a3b8';
+Chart.defaults.borderColor='#334155';
+const accent='#3b82f6';
+
+// PDR Bar
+new Chart(document.getElementById('cPdr'),{
+  type:'bar',
+  data:{labels:${pdrLabels},datasets:[{label:'PDR %',data:${pdrData},backgroundColor:${pdrColors},borderRadius:5}]},
+  options:{responsive:true,scales:{y:{min:0,max:100,grid:{color:'#1e293b'},ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:false}}}
+});
+
+// Latency trend line
+${lat.samples?.length ? `
+new Chart(document.getElementById('cLat'),{
+  type:'line',
+  data:{labels:${JSON.stringify((lat.samples||[]).map((_,i)=>i+1))},
+    datasets:[{label:'RTT(ms)',data:${latSamples},borderColor:accent,backgroundColor:'rgba(59,130,246,0.1)',fill:true,pointRadius:2,tension:.2}]},
+  options:{responsive:true,scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>v+'ms'}}},plugins:{legend:{display:false}}}
+});
+// Latency histogram
+if(document.getElementById('cLatHist')){
+  const hData=${JSON.stringify(latHistBuckets)};
+  new Chart(document.getElementById('cLatHist'),{
+    type:'bar',
+    data:{labels:hData.map(b=>b.label),datasets:[{data:hData.map(b=>b.count),backgroundColor:'rgba(168,85,247,0.7)',borderRadius:3}]},
+    options:{responsive:true,scales:{y:{grid:{color:'#1e293b'},title:{display:true,text:'count'}}},plugins:{legend:{display:false}}}
+  });
+}
+// Latency percentile bar
+if(document.getElementById('cLatPct')){
+  const pctLabels=['min','p50','p95','p99','max'];
+  const pctData=[${[lat.min,lat.p50,lat.p95,lat.p99,lat.max].join(',')}];
+  const pctColors=['#22c55e','#3b82f6','#f59e0b','#f97316','#ef4444'];
+  new Chart(document.getElementById('cLatPct'),{
+    type:'bar',
+    data:{labels:pctLabels,datasets:[{data:pctData,backgroundColor:pctColors,borderRadius:4}]},
+    options:{responsive:true,scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>v+'ms'}}},plugins:{legend:{display:false}}}
+  });
+}` : `if(document.getElementById('cLat'))document.getElementById('cLat').closest('.card').innerHTML+='<div style="color:#475569;font-size:12px;margin-top:8px;">레이턴시 데이터 없음</div>';`}
+
+// Frame sweep
+${sw.length ? `
+new Chart(document.getElementById('cSwPdr'),{
+  type:'bar',
+  data:{labels:${swLabels},datasets:[{label:'PDR%',data:${swPdr},
+    backgroundColor:${JSON.stringify(sw.map(s=>s.pdr>=99?'#22c55e':s.pdr>=80?'#f59e0b':'#ef4444'))},borderRadius:4}]},
+  options:{responsive:true,scales:{y:{min:0,max:100,grid:{color:'#1e293b'}}},plugins:{legend:{display:false}}}
+});
+new Chart(document.getElementById('cSwMbps'),{
+  type:'line',
+  data:{labels:${swLabels},datasets:[{label:'Mbps',data:${swMbps},
+    borderColor:'#a855f7',backgroundColor:'rgba(168,85,247,0.1)',fill:true,pointRadius:5,tension:.3}]},
+  options:{responsive:true,scales:{y:{grid:{color:'#1e293b'}}},plugins:{legend:{display:false}}}
+});` : ''}
+</script>
+</body></html>`;
 }

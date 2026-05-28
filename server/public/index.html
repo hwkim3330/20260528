@@ -310,14 +310,15 @@
           <button id="captureFilterClear" class="small">Clear</button>
           <button id="captureExportCsv" class="small">↓ Export CSV</button>
         </div>
-        <!-- Protocol summary -->
+        <!-- Protocol summary / filter chips -->
         <div class="proto-summary" id="captureProtoSummary">
-          ARP <span id="capCntArp">0</span> &nbsp;
-          IPv4 <span id="capCntIpv4">0</span> &nbsp;
-          IPv6 <span id="capCntIpv6">0</span> &nbsp;
-          TCP <span id="capCntTcp">0</span> &nbsp;
-          UDP <span id="capCntUdp">0</span> &nbsp;
-          ICMP <span id="capCntIcmp">0</span>
+          <button class="proto-chip" data-proto="">All</button>
+          <button class="proto-chip" data-proto="ARP">ARP <span id="capCntArp">0</span></button>
+          <button class="proto-chip" data-proto="IPv4">IPv4 <span id="capCntIpv4">0</span></button>
+          <button class="proto-chip" data-proto="IPv6">IPv6 <span id="capCntIpv6">0</span></button>
+          <button class="proto-chip" data-proto="TCP">TCP <span id="capCntTcp">0</span></button>
+          <button class="proto-chip" data-proto="UDP">UDP <span id="capCntUdp">0</span></button>
+          <button class="proto-chip" data-proto="ICMP">ICMP <span id="capCntIcmp">0</span></button>
         </div>
         <!-- Interface filter checkboxes (hidden when only 1 interface) -->
         <div class="iface-filters" id="capIfaceFilters"></div>
@@ -1086,6 +1087,90 @@
         </div>
 
       </div>
+
+        <!-- ── BENCHMARK ─────────────────────────────────────────────────────── -->
+        <div class="st-card" style="margin-top:16px;" id="benchCard">
+          <div class="st-card-head">
+            BENCHMARK
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span id="benchSt" class="reg-status"></span>
+              <button class="small" id="benchLoadPorts">↻ 포트맵 로드</button>
+              <button class="small" id="benchExportReport" style="display:none;">↓ HTML 리포트</button>
+            </div>
+          </div>
+          <div class="st-card-body">
+
+            <!-- Node A / B -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div>
+                <div class="matrix-node-title">NODE A (이 PC)</div>
+                <div class="field" style="margin-bottom:5px;">
+                  <label>URL</label>
+                  <input id="benchUrlA" type="text" value="http://localhost:8080">
+                </div>
+                <div class="field">
+                  <label>Interface</label>
+                  <select id="benchIfaceA"><option value="">— 포트맵 로드 —</option></select>
+                </div>
+              </div>
+              <div>
+                <div class="matrix-node-title">NODE B (상대 PC)</div>
+                <div class="field" style="margin-bottom:5px;">
+                  <label>URL</label>
+                  <input id="benchUrlB" type="text" value="http://169.254.1.168:8080">
+                </div>
+                <div class="field">
+                  <label>Interface</label>
+                  <select id="benchIfaceB"><option value="">— 포트맵 로드 —</option></select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Test suite -->
+            <div class="bench-checks">
+              <label class="bench-check-label"><input type="checkbox" id="benchTestPdr" checked> PDR / Throughput</label>
+              <label class="bench-check-label"><input type="checkbox" id="benchTestLatency" checked> Latency (RTT)</label>
+              <label class="bench-check-label"><input type="checkbox" id="benchTestSweep" checked> Frame Size Sweep</label>
+            </div>
+
+            <!-- Parameters -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
+              <div class="field"><label>Packet Count</label><input id="benchCount" type="number" value="100" min="10" max="1000"></div>
+              <div class="field"><label>Interval (ms)</label><input id="benchInterval" type="number" value="1" min="0" max="100"></div>
+              <div class="field"><label>Latency 반복</label><input id="benchLatIters" type="number" value="30" min="5" max="100"></div>
+              <div class="field"><label>Capture Timeout (ms)</label><input id="benchCapTimeout" type="number" value="5000" min="1000"></div>
+            </div>
+
+            <!-- Run -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <button class="primary" id="benchRun">&#9654; Run Benchmark</button>
+              <button class="danger small" id="benchStop" style="display:none;">&#9632; Stop</button>
+            </div>
+
+            <!-- Progress bar -->
+            <div id="benchProgressWrap" style="display:none;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px;">
+                <span id="benchProgressLabel">준비 중...</span>
+                <span id="benchProgressPct">0%</span>
+              </div>
+              <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+                <div id="benchProgressFill" style="height:100%;width:0%;background:var(--accent);transition:width .4s;"></div>
+              </div>
+            </div>
+
+            <!-- Log -->
+            <div id="benchLog" class="bench-log" style="display:none;"></div>
+
+            <!-- Results -->
+            <div id="benchResultsWrap" style="display:none;margin-top:12px;">
+              <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:8px;">RESULTS</div>
+              <div id="benchStatCards" class="bench-stat-grid"></div>
+              <div id="benchChartWrap" style="margin-top:12px;"></div>
+            </div>
+
+          </div>
+        </div>
+
     </section>
 
   </div><!-- .content -->

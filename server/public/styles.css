@@ -907,6 +907,18 @@ button.toc-sub.toc-active { color: var(--accent); }
 .bench-bar-fill { height: 100%; border-radius: 3px; transition: width .5s; }
 .bench-bar-val  { width: 55px; font-family: Consolas, monospace; }
 
+/* Benchmark Matrix Grid */
+.bmx-table { border-collapse: collapse; font-size: 11px; min-width: 420px; }
+.bmx-table th { background: var(--surfAlt); color: var(--muted); font-size: 9px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; padding: 6px 10px; border: 1px solid var(--border); text-align: center; }
+.bmx-table td { border: 1px solid var(--border); padding: 0; vertical-align: top; }
+.bmx-cell { padding: 7px 10px; text-align: center; line-height: 1.5; }
+.bmx-cell.ok   { background: #22c55e12; }
+.bmx-cell.warn { background: #f59e0b12; }
+.bmx-cell.bad  { background: #ef444412; }
+.bmx-pdr  { font-size: 13px; font-weight: 700; }
+.bmx-sub  { font-size: 9px; color: var(--muted); }
+
 /* TX frame badge in Capture tab */
 .dir-tx-badge {
   display: inline-block; margin-left: 4px;

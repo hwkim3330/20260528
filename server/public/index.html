@@ -1168,6 +1168,52 @@
               <div id="benchChartWrap" style="margin-top:12px;"></div>
             </div>
 
+            <!-- ── MATRIX BENCHMARK ────────────────────────────────────────── -->
+            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <div>
+                  <span style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.07em;">MATRIX BENCHMARK</span>
+                  <small style="font-weight:400;color:var(--muted);margin-left:6px;">전체 포트 조합 × PDR + Throughput</small>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <span id="benchMxSt" class="reg-status"></span>
+                  <button class="small" id="benchMxExportReport" style="display:none;">↓ Matrix 리포트</button>
+                </div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
+                <label class="bench-check-label">
+                  <input type="checkbox" id="benchMxTestLatency"> Latency 포함 <small style="color:var(--muted);">(회당 ~10s 추가)</small>
+                </label>
+                <div class="field" style="margin:0;display:flex;align-items:center;gap:6px;">
+                  <label style="white-space:nowrap;font-size:10px;">Latency 반복</label>
+                  <input id="benchMxLatIters" type="number" value="15" min="5" max="50" style="width:55px;">
+                </div>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <button class="primary" id="benchMxRun">&#9654; Run Matrix Benchmark</button>
+                <button class="danger small" id="benchMxStop" style="display:none;">&#9632; Stop</button>
+              </div>
+
+              <div id="benchMxProgressWrap" style="display:none;margin-bottom:6px;">
+                <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px;">
+                  <span id="benchMxProgressLabel">준비 중...</span>
+                  <span id="benchMxProgressPct">0%</span>
+                </div>
+                <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+                  <div id="benchMxProgressFill" style="height:100%;width:0%;background:#a855f7;transition:width .4s;"></div>
+                </div>
+              </div>
+              <div id="benchMxLog" class="bench-log" style="display:none;max-height:130px;"></div>
+
+              <div id="benchMxResultsWrap" style="display:none;margin-top:10px;">
+                <div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:6px;">MATRIX RESULTS</div>
+                <div id="benchMxGrid" style="overflow-x:auto;"></div>
+                <div id="benchMxDetailWrap" style="margin-top:10px;overflow-x:auto;"></div>
+              </div>
+            </div>
+
           </div>
         </div>
 

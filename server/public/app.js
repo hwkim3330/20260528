@@ -4422,6 +4422,11 @@ async function init() {
   $('benchStop')?.addEventListener('click', () => { _benchAbort = true; });
   $('benchExportReport')?.addEventListener('click', exportBenchmarkReport);
 
+  // Matrix Benchmark
+  $('benchMxRun')?.addEventListener('click', runMatrixBenchmark);
+  $('benchMxStop')?.addEventListener('click', () => { _benchMxAbort = true; });
+  $('benchMxExportReport')?.addEventListener('click', exportMatrixBenchReport);
+
   try {
     await api('/api/health');
     setStatus('Connected');
@@ -5451,6 +5456,399 @@ function exportBenchmarkReport() {
   a.download = `benchmark_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.html`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── Matrix Benchmark ──────────────────────────────────────────────────────────
+let _benchMxAbort   = false;
+let _benchMxResults = null;
+
+function _benchMxLog(msg, cls = '') {
+  const el = $('benchMxLog');
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = msg;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+}
+
+function _benchMxProgress(pct, label) {
+  const fill = $('benchMxProgressFill'); if (fill) fill.style.width = pct + '%';
+  const lbl  = $('benchMxProgressLabel'); if (lbl) lbl.textContent = label;
+  const pctEl= $('benchMxProgressPct');  if (pctEl) pctEl.textContent = pct + '%';
+}
+
+async function runMatrixBenchmark() {
+  const nodeAUrl = ($('benchUrlA')?.value || '').trim() || window.location.origin;
+  const nodeBUrl = ($('benchUrlB')?.value || '').trim();
+
+  // Load pairs from portmap
+  await _loadPortmapSilent();
+  const aEntries = (state.portmap || []).filter(e => !e.nodeUrl && e.iface);
+  const bEntries = (state.portmap || []).filter(e =>  e.nodeUrl && e.iface);
+
+  if (!nodeBUrl)          return toast('Node B URL을 설정하세요', 'bad');
+  if (!aEntries.length)   return toast('Node A 인터페이스가 없습니다 — 포트맵 로드 먼저', 'bad');
+  if (!bEntries.length)   return toast('Node B 인터페이스가 없습니다 — 포트맵 로드 먼저', 'bad');
+
+  const withLatency = $('benchMxTestLatency')?.checked ?? false;
+  const latIters    = Math.min(parseInt($('benchMxLatIters')?.value) || 15, 50);
+  const count       = parseInt($('benchCount')?.value)      || 100;
+  const iMs         = parseInt($('benchInterval')?.value)   || 1;
+  const capMs       = parseInt($('benchCapTimeout')?.value) || 5000;
+
+  const pairs = [];
+  for (const a of aEntries) for (const b of bEntries) pairs.push({ a, b });
+
+  _benchMxAbort   = false;
+  _benchMxResults = { pairs: [], nodeAUrl, nodeBUrl, startedAt: new Date().toISOString() };
+
+  $('benchMxRun').style.display          = 'none';
+  $('benchMxStop').style.display         = 'inline';
+  $('benchMxProgressWrap').style.display = 'block';
+  $('benchMxLog').style.display          = 'block';
+  $('benchMxLog').innerHTML              = '';
+  $('benchMxResultsWrap').style.display  = 'none';
+  $('benchMxExportReport').style.display = 'none';
+
+  const total = pairs.length;
+  let done = 0;
+
+  _benchMxLog(`총 ${total}개 포트 조합 (A×${aEntries.length} × B×${bEntries.length})${withLatency ? ' + Latency' : ''}`, 'dim');
+
+  for (const { a, b } of pairs) {
+    if (_benchMxAbort) break;
+
+    const label = `P${a.port}(${a.iface}) ↔ P${b.port}(${b.iface})`;
+    _benchMxProgress(Math.round(done / total * 100), label);
+    _benchMxLog(`▶ ${label}`, 'dim');
+
+    const pairResult = { a, b, atob: null, btoa: null, latency: null, error: null };
+
+    try {
+      pairResult.atob = await runBenchPDR(nodeAUrl, a.iface, nodeBUrl, b.iface, count, iMs, 64, capMs);
+      _benchMxLog(`  A→B PDR ${pairResult.atob.pdr}%  ${pairResult.atob.mbps} Mbps  (loss ${pairResult.atob.lost})`,
+                  pairResult.atob.pdr >= 99 ? 'ok' : pairResult.atob.pdr >= 80 ? 'warn' : 'err');
+
+      if (!_benchMxAbort) {
+        pairResult.btoa = await runBenchPDR(nodeBUrl, b.iface, nodeAUrl, a.iface, count, iMs, 64, capMs);
+        _benchMxLog(`  B→A PDR ${pairResult.btoa.pdr}%  ${pairResult.btoa.mbps} Mbps  (loss ${pairResult.btoa.lost})`,
+                    pairResult.btoa.pdr >= 99 ? 'ok' : pairResult.btoa.pdr >= 80 ? 'warn' : 'err');
+      }
+
+      if (withLatency && !_benchMxAbort) {
+        pairResult.latency = await runBenchLatency(nodeAUrl, a.iface, nodeBUrl, b.iface, latIters, capMs);
+        if (pairResult.latency.error) {
+          _benchMxLog(`  Latency: ${pairResult.latency.error}`, 'err');
+        } else {
+          _benchMxLog(`  Latency avg ${pairResult.latency.avg}ms  p95 ${pairResult.latency.p95}ms  jitter ${pairResult.latency.jitter}ms`);
+        }
+      }
+    } catch (e) {
+      pairResult.error = e.message;
+      _benchMxLog(`  ✗ ${e.message}`, 'err');
+    }
+
+    _benchMxResults.pairs.push(pairResult);
+    done++;
+    _renderMatrixBenchGrid(_benchMxResults, aEntries, bEntries);
+    $('benchMxResultsWrap').style.display = 'block';
+  }
+
+  _benchMxResults.finishedAt = new Date().toISOString();
+  _benchMxLog(_benchMxAbort ? '⊘ 중단됨' : '✓ 완료', _benchMxAbort ? 'warn' : 'ok');
+  _benchMxProgress(100, _benchMxAbort ? '중단됨' : '완료');
+
+  $('benchMxRun').style.display          = 'inline';
+  $('benchMxStop').style.display         = 'none';
+  $('benchMxExportReport').style.display = 'inline';
+}
+
+function _cellClass(pdr) {
+  if (pdr == null) return '';
+  return pdr >= 99 ? 'ok' : pdr >= 80 ? 'warn' : 'bad';
+}
+function _cellColor(pdr) {
+  if (pdr == null) return 'var(--muted)';
+  return pdr >= 99 ? '#22c55e' : pdr >= 80 ? '#f59e0b' : '#ef4444';
+}
+
+function _renderMatrixBenchGrid(results, aEntries, bEntries) {
+  const gridEl   = $('benchMxGrid');
+  const detailEl = $('benchMxDetailWrap');
+  if (!gridEl) return;
+
+  // ── Matrix grid ───────────────────────────────────────────────────────────
+  let th = '<th style="min-width:110px;"></th>';
+  bEntries.forEach(b => { th += `<th>P${b.port}<br>${esc(b.iface)}</th>`; });
+
+  let rows = '';
+  aEntries.forEach(a => {
+    let cells = `<th style="text-align:left;">P${a.port}<br><span style="font-weight:400;">${esc(a.iface)}</span></th>`;
+    bEntries.forEach(b => {
+      const pr = results.pairs.find(p => p.a.port === a.port && p.b.port === b.port);
+      if (!pr) {
+        cells += '<td><div class="bmx-cell" style="color:var(--muted);font-size:10px;">—</div></td>';
+        return;
+      }
+      if (pr.error) {
+        cells += `<td><div class="bmx-cell bad"><div class="bmx-pdr" style="color:#ef4444;">ERR</div><div class="bmx-sub">${esc(pr.error.slice(0,20))}</div></div></td>`;
+        return;
+      }
+      const worstPdr = Math.min(pr.atob?.pdr ?? 100, pr.btoa?.pdr ?? 100);
+      const cls      = _cellClass(worstPdr);
+      const col      = _cellColor(worstPdr);
+      const latLine  = pr.latency?.avg != null ? `<div class="bmx-sub">${pr.latency.avg}ms avg</div>` : '';
+      cells += `<td><div class="bmx-cell ${cls}">
+        <div class="bmx-pdr" style="color:${col};">${pr.atob?.pdr ?? '—'}%</div>
+        <div class="bmx-sub">A→B &nbsp; ${pr.atob?.mbps ?? '—'} Mbps</div>
+        <div class="bmx-pdr" style="color:${_cellColor(pr.btoa?.pdr)};margin-top:3px;">${pr.btoa?.pdr ?? '—'}%</div>
+        <div class="bmx-sub">B→A &nbsp; ${pr.btoa?.mbps ?? '—'} Mbps</div>
+        ${latLine}
+      </div></td>`;
+    });
+    rows += `<tr>${cells}</tr>`;
+  });
+
+  gridEl.innerHTML = `<table class="bmx-table"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table>`;
+
+  // ── Detail table ─────────────────────────────────────────────────────────
+  if (!detailEl) return;
+  const dRows = results.pairs.map((pr, i) => {
+    const atob = pr.atob, btoa = pr.btoa, lat = pr.latency;
+    return `<tr>
+      <td style="font-size:10px;">${i+1}</td>
+      <td>P${pr.a.port}</td><td>${esc(pr.a.iface)}</td>
+      <td>P${pr.b.port}</td><td>${esc(pr.b.iface)}</td>
+      <td style="color:${_cellColor(atob?.pdr)};font-weight:600;">${atob?.pdr ?? '—'}%</td>
+      <td>${atob?.mbps ?? '—'}</td>
+      <td>${atob?.lost ?? '—'}</td>
+      <td style="color:${_cellColor(btoa?.pdr)};font-weight:600;">${btoa?.pdr ?? '—'}%</td>
+      <td>${btoa?.mbps ?? '—'}</td>
+      <td>${btoa?.lost ?? '—'}</td>
+      ${lat ? `<td>${lat.avg ?? '—'}</td><td>${lat.p95 ?? '—'}</td><td>${lat.jitter ?? '—'}</td>` : '<td colspan="3" style="color:var(--muted);">—</td>'}
+    </tr>`;
+  }).join('');
+
+  const hasLat = results.pairs.some(p => p.latency);
+  const latHead = hasLat ? '<th>Lat avg</th><th>Lat p95</th><th>Jitter</th>' : '<th colspan="3">Latency</th>';
+
+  detailEl.innerHTML = `<div style="font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.05em;margin-bottom:5px;">DETAIL</div>
+  <table class="fdb-table" style="width:100%;min-width:720px;font-size:11px;">
+    <thead><tr>
+      <th>#</th><th>A Port</th><th>A Interface</th><th>B Port</th><th>B Interface</th>
+      <th>A→B PDR</th><th>A→B Mbps</th><th>A→B Loss</th>
+      <th>B→A PDR</th><th>B→A Mbps</th><th>B→A Loss</th>
+      ${latHead}
+    </tr></thead>
+    <tbody>${dRows}</tbody>
+  </table>`;
+}
+
+function exportMatrixBenchReport() {
+  if (!_benchMxResults?.pairs?.length) return toast('먼저 Matrix Benchmark를 실행하세요', 'bad');
+  const html = _buildMatrixBenchReport(_benchMxResults);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `matrix_benchmark_${new Date().toISOString().slice(0,16).replace(/[T:]/g,'-')}.html`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function _buildMatrixBenchReport(results) {
+  const H   = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const pairs = results.pairs || [];
+  const aSet  = [...new Map(pairs.map(p => [p.a.port, p.a])).values()].sort((a,b) => a.port - b.port);
+  const bSet  = [...new Map(pairs.map(p => [p.b.port, p.b])).values()].sort((a,b) => a.port - b.port);
+  const hasLat = pairs.some(p => p.latency?.avg != null);
+
+  const ts    = new Date(results.startedAt).toLocaleString('ko-KR');
+  const tsEnd = new Date(results.finishedAt || results.startedAt).toLocaleString('ko-KR');
+  const durSec = results.finishedAt
+    ? Math.round((new Date(results.finishedAt) - new Date(results.startedAt)) / 1000) : '?';
+
+  // Summary stats
+  const validPairs = pairs.filter(p => !p.error && p.atob);
+  const avgPdrAtob = validPairs.length ? (validPairs.reduce((s,p) => s + (p.atob?.pdr||0), 0) / validPairs.length).toFixed(1) : '—';
+  const avgPdrBtoa = validPairs.filter(p=>p.btoa).length
+    ? (validPairs.filter(p=>p.btoa).reduce((s,p) => s + (p.btoa?.pdr||0), 0) / validPairs.filter(p=>p.btoa).length).toFixed(1) : '—';
+  const maxMbps    = Math.max(...validPairs.map(p => p.atob?.mbps || 0));
+  const minPdr     = validPairs.length ? Math.min(...validPairs.map(p => Math.min(p.atob?.pdr||100, p.btoa?.pdr||100))) : 0;
+  const passCount  = validPairs.filter(p => (p.atob?.pdr||0) >= 99 && (p.btoa?.pdr||100) >= 99).length;
+  const totalCount = pairs.length;
+
+  // Chart datasets
+  const pairLabels = pairs.map(p => `P${p.a.port}→P${p.b.port}`);
+  const atobPdrs   = pairs.map(p => p.atob?.pdr ?? 0);
+  const btoaPdrs   = pairs.map(p => p.btoa?.pdr ?? 0);
+  const atobMbps   = pairs.map(p => p.atob?.mbps ?? 0);
+  const btoaMbps   = pairs.map(p => p.btoa?.mbps ?? 0);
+  const latAvgs    = pairs.map(p => p.latency?.avg ?? null);
+  const latP95s    = pairs.map(p => p.latency?.p95 ?? null);
+
+  // Matrix table html
+  let matrixTh = '<th></th>' + bSet.map(b => `<th>P${b.port}<br>${H(b.iface)}</th>`).join('');
+  let matrixRows = aSet.map(a => {
+    const cells = bSet.map(b => {
+      const pr = pairs.find(p => p.a.port === a.port && p.b.port === b.port);
+      if (!pr || pr.error) return `<td style="text-align:center;color:#ef4444;">${pr?.error ? 'ERR' : '—'}</td>`;
+      const worstPdr = Math.min(pr.atob?.pdr ?? 100, pr.btoa?.pdr ?? 100);
+      const col = worstPdr >= 99 ? '#22c55e' : worstPdr >= 80 ? '#f59e0b' : '#ef4444';
+      const bg  = worstPdr >= 99 ? '#22c55e12' : worstPdr >= 80 ? '#f59e0b12' : '#ef444412';
+      const lat = pr.latency?.avg != null ? `<br><span style="font-size:10px;color:#94a3b8;">${pr.latency.avg}ms</span>` : '';
+      return `<td style="text-align:center;background:${bg};">
+        <span style="font-weight:700;color:${col};font-size:13px;">${pr.atob?.pdr ?? '—'}%</span>
+        <br><span style="font-size:10px;color:#94a3b8;">↔ ${pr.btoa?.pdr ?? '—'}%</span>${lat}
+      </td>`;
+    }).join('');
+    return `<tr><th style="text-align:left;">P${a.port} ${H(a.iface)}</th>${cells}</tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matrix Benchmark Report — ${H(ts)}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:28px 32px;min-width:800px}
+h1{font-size:22px;font-weight:700;margin-bottom:4px;color:#f1f5f9}
+.meta{font-size:11px;color:#64748b;margin-bottom:22px;line-height:1.8}
+.section{font-size:10px;font-weight:700;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:20px 0 10px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.grid-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px}
+.card{background:#1e293b;border-radius:8px;padding:16px;border:1px solid #334155}
+.card-title{font-size:10px;font-weight:600;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+.stat{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 14px;text-align:center}
+.stat.ok{border-color:#22c55e66;background:#22c55e0a}
+.stat.warn{border-color:#f59e0b66;background:#f59e0b0a}
+.stat.bad{border-color:#ef444466;background:#ef44440a}
+.sl{font-size:9px;color:#64748b;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.sv{font-size:22px;font-weight:700}
+.su{font-size:10px;color:#94a3b8;margin-top:2px}
+.ok{color:#22c55e}.warn{color:#f59e0b}.bad{color:#ef4444}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#0f172a;color:#64748b;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+   padding:8px 10px;border:1px solid #334155;text-align:left}
+td{padding:8px 10px;border:1px solid #334155}
+.footer{margin-top:36px;font-size:10px;color:#334155;text-align:center;border-top:1px solid #1e293b;padding-top:14px}
+canvas{max-height:260px}
+</style></head>
+<body>
+<h1>PacketLabManager — Matrix Benchmark Report</h1>
+<div class="meta">
+  Node A: <strong>${H(results.nodeAUrl)}</strong> &nbsp;|&nbsp;
+  Node B: <strong>${H(results.nodeBUrl)}</strong><br>
+  시작: ${H(ts)} &nbsp;|&nbsp; 완료: ${H(tsEnd)} &nbsp;|&nbsp; 소요: ${durSec}초
+</div>
+
+<div class="section">Summary</div>
+<div class="grid-stats">
+  <div class="stat ${passCount === totalCount ? 'ok' : passCount > totalCount/2 ? 'warn' : 'bad'}">
+    <div class="sl">PASS (PDR≥99%)</div>
+    <div class="sv">${passCount} / ${totalCount}</div>
+    <div class="su">조합</div>
+  </div>
+  <div class="stat ${Number(avgPdrAtob)>=99?'ok':Number(avgPdrAtob)>=80?'warn':'bad'}">
+    <div class="sl">평균 PDR A→B</div><div class="sv">${avgPdrAtob}</div><div class="su">%</div>
+  </div>
+  <div class="stat ${Number(avgPdrBtoa)>=99?'ok':Number(avgPdrBtoa)>=80?'warn':'bad'}">
+    <div class="sl">평균 PDR B→A</div><div class="sv">${avgPdrBtoa}</div><div class="su">%</div>
+  </div>
+  <div class="stat ${minPdr>=99?'ok':minPdr>=80?'warn':'bad'}">
+    <div class="sl">최소 PDR (worst)</div><div class="sv">${minPdr}</div><div class="su">%</div>
+  </div>
+  <div class="stat">
+    <div class="sl">최대 Throughput</div><div class="sv">${maxMbps}</div><div class="su">Mbps</div>
+  </div>
+</div>
+
+<div class="section">Matrix (A→B % / B→A %${hasLat?' / avg latency':''})</div>
+<div class="card" style="margin-bottom:14px;overflow-x:auto;">
+  <table style="min-width:400px;"><thead><tr>${matrixTh}</tr></thead><tbody>${matrixRows}</tbody></table>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">PDR A→B per Port Pair (%)</div>
+    <canvas id="cAtob"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">PDR B→A per Port Pair (%)</div>
+    <canvas id="cBtoa"></canvas>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Throughput A→B per Port Pair (Mbps)</div>
+    <canvas id="cMbpsA"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-title">${hasLat ? 'Latency avg / p95 per Port Pair (ms)' : 'Throughput B→A per Port Pair (Mbps)'}</div>
+    <canvas id="cMbpsB"></canvas>
+  </div>
+</div>
+
+<div class="section">Detail</div>
+<div class="card" style="margin-bottom:14px;overflow-x:auto;">
+<table style="min-width:700px;"><thead><tr>
+  <th>#</th><th>A Port</th><th>A Interface</th><th>B Port</th><th>B Interface</th>
+  <th>A→B PDR</th><th>A→B Mbps</th><th>A→B Loss</th>
+  <th>B→A PDR</th><th>B→A Mbps</th><th>B→A Loss</th>
+  ${hasLat ? '<th>Lat avg</th><th>Lat p95</th><th>Jitter</th>' : ''}
+</tr></thead><tbody>
+${pairs.map((pr, i) => `<tr>
+  <td>${i+1}</td>
+  <td>P${pr.a.port}</td><td>${H(pr.a.iface)}</td>
+  <td>P${pr.b.port}</td><td>${H(pr.b.iface)}</td>
+  <td class="${(pr.atob?.pdr??0)>=99?'ok':(pr.atob?.pdr??0)>=80?'warn':'bad'}">${pr.atob?.pdr ?? '—'}%</td>
+  <td>${pr.atob?.mbps ?? '—'}</td>
+  <td>${pr.atob?.lost ?? '—'}</td>
+  <td class="${(pr.btoa?.pdr??0)>=99?'ok':(pr.btoa?.pdr??0)>=80?'warn':'bad'}">${pr.btoa?.pdr ?? '—'}%</td>
+  <td>${pr.btoa?.mbps ?? '—'}</td>
+  <td>${pr.btoa?.lost ?? '—'}</td>
+  ${hasLat ? `<td>${pr.latency?.avg ?? '—'}</td><td>${pr.latency?.p95 ?? '—'}</td><td>${pr.latency?.jitter ?? '—'}</td>` : ''}
+</tr>`).join('')}
+</tbody></table></div>
+
+<div class="footer">
+  PacketLabManager Matrix Benchmark &nbsp;|&nbsp; ${H(ts)}<br>
+  Node A: ${H(results.nodeAUrl)} &nbsp;|&nbsp; Node B: ${H(results.nodeBUrl)}
+</div>
+
+<script>
+Chart.defaults.color='#94a3b8'; Chart.defaults.borderColor='#334155';
+const pairLabels=${JSON.stringify(pairLabels)};
+const atobPdrs=${JSON.stringify(atobPdrs)};
+const btoaPdrs=${JSON.stringify(btoaPdrs)};
+const pdrColors=v=>v>=99?'#22c55e':v>=80?'#f59e0b':'#ef4444';
+
+new Chart(document.getElementById('cAtob'),{type:'bar',
+  data:{labels:pairLabels,datasets:[{data:atobPdrs,backgroundColor:atobPdrs.map(pdrColors),borderRadius:4}]},
+  options:{responsive:true,scales:{y:{min:0,max:100,grid:{color:'#1e293b'},ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:false}}}});
+
+new Chart(document.getElementById('cBtoa'),{type:'bar',
+  data:{labels:pairLabels,datasets:[{data:btoaPdrs,backgroundColor:btoaPdrs.map(pdrColors),borderRadius:4}]},
+  options:{responsive:true,scales:{y:{min:0,max:100,grid:{color:'#1e293b'},ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:false}}}});
+
+new Chart(document.getElementById('cMbpsA'),{type:'bar',
+  data:{labels:pairLabels,datasets:[{label:'Mbps',data:${JSON.stringify(atobMbps)},backgroundColor:'rgba(59,130,246,0.7)',borderRadius:4}]},
+  options:{responsive:true,scales:{y:{grid:{color:'#1e293b'}}},plugins:{legend:{display:false}}}});
+
+${hasLat ? `
+new Chart(document.getElementById('cMbpsB'),{type:'bar',
+  data:{labels:pairLabels,datasets:[
+    {label:'avg(ms)',data:${JSON.stringify(latAvgs)},backgroundColor:'rgba(168,85,247,0.7)',borderRadius:4},
+    {label:'p95(ms)',data:${JSON.stringify(latP95s)},backgroundColor:'rgba(249,115,22,0.5)',borderRadius:4}
+  ]},
+  options:{responsive:true,scales:{y:{grid:{color:'#1e293b'},ticks:{callback:v=>v+'ms'}}},plugins:{legend:{position:'top'}}}});
+` : `
+new Chart(document.getElementById('cMbpsB'),{type:'bar',
+  data:{labels:pairLabels,datasets:[{label:'Mbps',data:${JSON.stringify(btoaMbps)},backgroundColor:'rgba(16,185,129,0.7)',borderRadius:4}]},
+  options:{responsive:true,scales:{y:{grid:{color:'#1e293b'}}},plugins:{legend:{display:false}}}});
+`}
+</script>
+</body></html>`;
 }
 
 function _buildBenchReport(params, res) {

@@ -28,6 +28,17 @@ function checksum(buf) {
 
 function parseHex(s) { return parseInt(String(s ?? '0').replace(/^0x/i, ''), 16) || 0; }
 
+// IP protocol number from a name ('udp'/'tcp'/'icmp') or numeric string; null if unset/unknown.
+function protoNum(s) {
+  const t = String(s ?? '').trim().toLowerCase();
+  if (t === 'udp')  return 17;
+  if (t === 'tcp')  return 6;
+  if (t === 'icmp') return 1;
+  if (t === '') return null;
+  const n = parseInt(t, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
 function payloadBytes(p, seq) {
   const pl = p.payload || {};
   const mode = (pl.mode || 'text').toLowerCase();
@@ -225,6 +236,20 @@ function buildFrameFromBlocks(blocks, profile, seq) {
     precomputed.slice(from).map((b, j) => b !== null ? b : Buffer.alloc(sizes[from + j]))
   );
 
+  // Effective IPv4 fields — block-mode frames should be self-describing, so prefer
+  // the IPv4 block's own fields and fall back to profile.ipv4. This is shared by the
+  // IPv4 header AND by the UDP/TCP pseudo-header checksum so they stay consistent.
+  const ipB  = blocks.find(b => b.type === 'IPv4') || {};
+  const pIp  = profile.ipv4 || {};
+  const effIp = {
+    src: ipB.srcIp ?? pIp.src ?? '0.0.0.0',
+    dst: ipB.dstIp ?? pIp.dst ?? '0.0.0.0',
+    ttl: ipB.ttl   ?? pIp.ttl ?? 64,
+    tos: ipB.tos   ?? pIp.tos ?? 0,
+    flagsFragment: pIp.flagsFragment ?? 0x4000,
+    ipProto: pIp.ipProto ?? protoNum(ipB.protocol),
+  };
+
   const parts = [];
   for (let i = 0; i < blocks.length; i++) {
     const block   = blocks[i];
@@ -248,35 +273,45 @@ function buildFrameFromBlocks(blocks, profile, seq) {
         break;
       }
       case 'IPv4': {
-        const ip = profile.ipv4 || {};
-        let ipProto = ip.ipProto ?? 0;
+        let ipProto = effIp.ipProto ?? 0;
         for (let j = i + 1; j < blocks.length; j++) {
           if (blocks[j].type === 'UDP')  { ipProto = 17; break; }
           if (blocks[j].type === 'TCP')  { ipProto = 6;  break; }
           if (blocks[j].type === 'ICMP') { ipProto = 1;  break; }
         }
         const h = Buffer.alloc(20);
-        h[0] = 0x45; h[1] = ip.tos ?? 0;
+        h[0] = 0x45; h[1] = effIp.tos;
         h.writeUInt16BE(20 + sizeFrom(i + 1), 2);
         h.writeUInt16BE((seq ?? 0) & 0xFFFF, 4);
-        h.writeUInt16BE(ip.flagsFragment ?? 0x4000, 6);
-        h[8] = ip.ttl ?? 64; h[9] = ipProto;
-        ipBytes(ip.src || '0.0.0.0').copy(h, 12);
-        ipBytes(ip.dst || '0.0.0.0').copy(h, 16);
+        h.writeUInt16BE(effIp.flagsFragment, 6);
+        h[8] = effIp.ttl; h[9] = ipProto;
+        ipBytes(effIp.src).copy(h, 12);
+        ipBytes(effIp.dst).copy(h, 16);
         h.writeUInt16BE(checksum(h), 10);
         parts.push(h);
         break;
       }
-      case 'ARP':
-        parts.push(buildARP(profile));
+      case 'ARP': {
+        // Prefer the ARP block's own fields; fall back to profile.arp
+        const a = profile.arp || {};
+        parts.push(buildARP({ ...profile, arp: {
+          operation: block.operation ?? a.operation,
+          senderMac: block.senderMac ?? a.senderMac,
+          senderIp:  block.senderIp  ?? a.senderIp,
+          targetMac: block.targetMac ?? a.targetMac,
+          targetIp:  block.targetIp  ?? a.targetIp,
+        } }));
         break;
+      }
       case 'UDP': {
         const u = profile.udp || {};
         const after = bytesFrom(i + 1);
         const len   = 8 + after.length;
-        const srcIp = ipBytes(profile.ipv4?.src || '0.0.0.0');
-        const dstIp = ipBytes(profile.ipv4?.dst || '0.0.0.0');
-        const hdr   = Buffer.concat([u16be(u.srcPort ?? 40000), u16be(u.dstPort ?? 50000), u16be(len), u16be(0)]);
+        const srcIp = ipBytes(effIp.src);
+        const dstIp = ipBytes(effIp.dst);
+        const sp    = block.srcPort ?? u.srcPort ?? 40000;
+        const dp    = block.dstPort ?? u.dstPort ?? 50000;
+        const hdr   = Buffer.concat([u16be(sp), u16be(dp), u16be(len), u16be(0)]);
         const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 17]), u16be(len)]);
         hdr.writeUInt16BE(checksum(Buffer.concat([pseudo, hdr, after])), 6);
         parts.push(hdr);
@@ -286,15 +321,15 @@ function buildFrameFromBlocks(blocks, profile, seq) {
         const t     = profile.tcp || {};
         const after = bytesFrom(i + 1);
         const hdr   = Buffer.alloc(20);
-        hdr.writeUInt16BE(t.srcPort ?? 40000, 0);
-        hdr.writeUInt16BE(t.dstPort ?? 50000, 2);
-        hdr.writeUInt32BE(t.seq ?? t.seqNum ?? 0, 4);
-        hdr.writeUInt32BE(t.ack ?? t.ackNum ?? 0, 8);
+        hdr.writeUInt16BE(block.srcPort ?? t.srcPort ?? 40000, 0);
+        hdr.writeUInt16BE(block.dstPort ?? t.dstPort ?? 50000, 2);
+        hdr.writeUInt32BE(block.seqNum ?? t.seq ?? t.seqNum ?? 0, 4);
+        hdr.writeUInt32BE(block.ackNum ?? t.ack ?? t.ackNum ?? 0, 8);
         hdr[12] = 0x50;
-        hdr[13] = t.flags ?? (after.length > 0 ? 0x18 : 0x02);
+        hdr[13] = block.flags ?? t.flags ?? (after.length > 0 ? 0x18 : 0x02);
         hdr.writeUInt16BE(t.window ?? 65535, 14);
-        const srcIp  = ipBytes(profile.ipv4?.src || '0.0.0.0');
-        const dstIp  = ipBytes(profile.ipv4?.dst || '0.0.0.0');
+        const srcIp  = ipBytes(effIp.src);
+        const dstIp  = ipBytes(effIp.dst);
         const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 6]), u16be(20 + after.length)]);
         hdr.writeUInt16BE(checksum(Buffer.concat([pseudo, hdr, after])), 16);
         parts.push(hdr);
@@ -304,7 +339,8 @@ function buildFrameFromBlocks(blocks, profile, seq) {
         const ic    = profile.icmp || {};
         const after = bytesFrom(i + 1);
         const hdr   = Buffer.alloc(8);
-        hdr[0] = ic.type ?? 8; hdr[1] = ic.code ?? 0;
+        hdr[0] = block.icmpType ?? ic.type ?? 8;
+        hdr[1] = block.icmpCode ?? ic.code ?? 0;
         hdr.writeUInt16BE(1, 4);
         hdr.writeUInt16BE(seq ?? 0, 6);
         hdr.writeUInt16BE(checksum(Buffer.concat([hdr, after])), 2);

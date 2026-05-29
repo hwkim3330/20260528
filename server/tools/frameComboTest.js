@@ -289,6 +289,52 @@ verify('leg ipv4(proto=udp17,no-l4)', buildFrame({ protocol: 'ipv4', srcMac: 'aa
   check('qinq/ip.csum',    checksumValid(f.subarray(22, 22 + (f[22] & 0x0F) * 4)), 'IPv4 csum invalid');
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// 5) BLOCK-ONLY (no profile.* mapping) — blocks must be self-describing (/api/build path)
+// ════════════════════════════════════════════════════════════════════════════════
+{
+  const ip2b = (b, o) => `${b[o]}.${b[o + 1]}.${b[o + 2]}.${b[o + 3]}`;
+  const mac2 = (b, o) => [...b.subarray(o, o + 6)].map(x => x.toString(16).padStart(2, '0')).join(':');
+
+  // ETH/IPv4/UDP — IPs + ports defined ONLY in blocks
+  {
+    const blocks = [ETH(), IPV4({ srcIp: '10.1.2.3', dstIp: '10.4.5.6', protocol: 'udp' }),
+                    UDP({ srcPort: 1234, dstPort: 5678 }), PL('text', 'X')];
+    const f = buildFrame({ interface: 't', blocks }, 0); // NOTE: no profile.ipv4/udp
+    check('blkonly/ip.src',  ip2b(f, 26) === '10.1.2.3', `ip.src=${ip2b(f, 26)} (expected 10.1.2.3)`);
+    check('blkonly/ip.dst',  ip2b(f, 30) === '10.4.5.6', `ip.dst=${ip2b(f, 30)} (expected 10.4.5.6)`);
+    check('blkonly/ip.csum', checksumValid(f.subarray(14, 34)), 'IPv4 csum invalid');
+    check('blkonly/udp.sport', f.readUInt16BE(34) === 1234, `udp.sport=${f.readUInt16BE(34)}`);
+    check('blkonly/udp.dport', f.readUInt16BE(36) === 5678, `udp.dport=${f.readUInt16BE(36)}`);
+    // UDP checksum must validate against the block-derived pseudo-header
+    const udpLen = f.readUInt16BE(38);
+    const pseudo = Buffer.concat([f.subarray(26, 30), f.subarray(30, 34), Buffer.from([0, 17]),
+                                  Buffer.from([udpLen >> 8, udpLen & 0xFF])]);
+    check('blkonly/udp.csum', checksumValid(Buffer.concat([pseudo, f.subarray(34, 34 + udpLen)])),
+          'UDP checksum invalid vs block IPs');
+  }
+  // ETH/ARP — ARP fields defined ONLY in block
+  {
+    const blocks = [ETH({ etherType: '0x0806' }),
+                    ARP({ operation: 2, senderMac: '11:22:33:44:55:66', senderIp: '10.0.0.1',
+                          targetMac: 'aa:aa:aa:aa:aa:aa', targetIp: '10.0.0.2' })];
+    const f = buildFrame({ interface: 't', blocks }, 0); // no profile.arp
+    check('blkonly/arp.op',     f.readUInt16BE(20) === 2, `arp.op=${f.readUInt16BE(20)}`);
+    check('blkonly/arp.smac',   mac2(f, 22) === '11:22:33:44:55:66', `arp.smac=${mac2(f, 22)}`);
+    check('blkonly/arp.sip',    ip2b(f, 28) === '10.0.0.1', `arp.sip=${ip2b(f, 28)}`);
+    check('blkonly/arp.tip',    ip2b(f, 38) === '10.0.0.2', `arp.tip=${ip2b(f, 38)}`);
+  }
+  // ETH/IPv4/ICMP — icmpType only in block
+  {
+    const blocks = [ETH(), IPV4({ srcIp: '1.2.3.4', dstIp: '5.6.7.8', protocol: 'icmp' }),
+                    ICMP({ icmpType: 3, icmpCode: 1 }), PL('text', 'x')];
+    const f = buildFrame({ interface: 't', blocks }, 0);
+    check('blkonly/icmp.type', f[34] === 3, `icmp.type=${f[34]} (expected 3)`);
+    check('blkonly/icmp.code', f[35] === 1, `icmp.code=${f[35]} (expected 1)`);
+    check('blkonly/icmp.csum', checksumValid(f.subarray(34, 14 + f.readUInt16BE(16))), 'ICMP csum invalid');
+  }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────────
 console.log(`\n  frameComboTest: ${passes.length} checks passed, ${failures.length} failed\n`);
 if (failures.length) {

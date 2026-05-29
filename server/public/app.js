@@ -40,6 +40,8 @@ const state = {
   portmapRemoteIfaces: [],
   portmap: [],       // loaded portmap entries (all 6 ports)
   allIfaces: [],     // merged local + remote ifaces for scenario selects
+  selfUrl: null,     // this node's URL (oriented from /api/portmap)
+  peerUrl: null,     // the other node's URL
 };
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -219,10 +221,28 @@ async function _silentRefreshInterfaces() {
   } catch { /* silent */ }
 }
 
+// Capture self/peer URLs from an oriented /api/portmap response and auto-fill the
+// 2-PC URL inputs so the page works from whichever node it's served on (self=this
+// node = "A"/local side, peer=the other node = "B"/remote side). Only fills inputs
+// the user hasn't edited.
+function _applyNodeEndpoints(data) {
+  if (data?.self) state.selfUrl = data.self;
+  if (data?.peer) state.peerUrl = data.peer;
+  const fill = (id, val) => {
+    const el = $(id); if (!el) return;
+    if (!el._endpointWired) { el.addEventListener('input', () => { el._userEdited = true; }); el._endpointWired = true; }
+    if (val && !el._userEdited) el.value = val;
+  };
+  fill('twoPcUrlA', state.selfUrl);   // local / this node
+  fill('twoPcUrlB', state.peerUrl);   // remote / peer
+  fill('portmapNodeBUrl', state.peerUrl);
+}
+
 async function _loadPortmapSilent() {
   try {
     const data = await api('/api/portmap');
     state.portmap = data.portmap || [];
+    _applyNodeEndpoints(data);
     const remoteUrl = state.portmap.find(e => e.nodeUrl)?.nodeUrl;
     if (remoteUrl && !state.portmapRemoteIfaces.length) {
       // also fetch remote ifaces if not yet loaded
@@ -4840,6 +4860,7 @@ async function loadPortMap() {
     const data = await api('/api/portmap');
     const portmap = data.portmap || [];
     state.portmap = portmap;  // keep in state for buildAllIfaces
+    _applyNodeEndpoints(data); // auto-fill 2-PC URLs for this node's perspective
 
     const remoteEntry = portmap.find(e => e.nodeUrl);
     if (remoteEntry) {
@@ -5169,8 +5190,8 @@ function _setMxDetailRow(i, a, b, atob, btoa, overall, err) {
 }
 
 async function runMatrixTest() {
-  const nodeAUrl = $('twoPcUrlA')?.value?.trim() || 'http://169.254.88.222:8080';
-  const nodeBUrl = $('twoPcUrlB')?.value?.trim() || 'http://169.254.1.168:8080';
+  const nodeAUrl = $('twoPcUrlA')?.value?.trim() || state.selfUrl || 'http://169.254.88.222:8080';
+  const nodeBUrl = $('twoPcUrlB')?.value?.trim() || state.peerUrl || 'http://169.254.1.168:8080';
   const direction = $('matrixDir')?.value || 'BOTH';
   const count = Number($('matrixCount')?.value || 10);
   const intervalMs = Number($('matrixInterval')?.value || 100);

@@ -1941,9 +1941,25 @@ function renderCaptureRows() {
   });
 }
 
-function downloadCaptureCsv() {
-  // Try server export first, fall back to client-side
-  window.open('/api/capture/export-csv', '_blank');
+async function downloadCaptureCsv() {
+  // Build the CSV client-side from the captured packets (there is no server export route).
+  try {
+    const data = await api('/api/capture/packets?limit=100000');
+    const rows = data.rows || [];
+    if (!rows.length) return toast('내보낼 캡처가 없습니다', 'bad');
+    const cols = ['no', 'timestamp', 'interface', 'direction', 'length', 'frameHex'];
+    const esc = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const csv = [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `capture-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('CSV 내보내기 실패: ' + e.message, 'bad'); }
 }
 
 // ── Scenario Lab ──────────────────────────────────────────────────────────────

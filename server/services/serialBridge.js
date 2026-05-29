@@ -90,14 +90,80 @@ async function listLinuxTty() {
   }).filter(Boolean);
 }
 
+// ── Shared command engine (used by both session types) ───────────────────────
+// The switch console protocol has no request IDs, so responses are matched to the
+// command that is in flight. To keep that matching correct we:
+//   1. serialise commands — only ONE is on the wire at a time (a promise chain);
+//   2. treat an OK/ERR line as the reply to the single in-flight command;
+//   3. ignore any OK/ERR that arrives with no command in flight (unsolicited);
+//   4. after a timeout, drain briefly before the next write so a late reply from
+//      the timed-out command can't be mis-paired with the next command.
+const _DRAIN_MS = 250;
+
+function _feedResponseLines(session, parts) {
+  for (const line of parts) {
+    const t = line.trim();
+    if (!t) continue;
+    if (!(t.startsWith('OK') || t.startsWith('ERR'))) continue; // banners / echo — not a reply
+    const inf = session._inflight;
+    if (!inf) continue;                 // unsolicited (e.g. straggler) — ignore
+    session._inflight = null;
+    clearTimeout(inf.timer);
+    if (t.startsWith('OK')) inf.resolve(t.slice(2).trim());
+    else inf.reject(new Error(t.slice(3).trim() || 'ERR'));
+  }
+}
+
+function _runCommand(session, writeFn, cmd, timeoutMs = 3000) {
+  const prev = session._cmdChain || Promise.resolve();
+  const result = prev.catch(() => {}).then(async () => {
+    // After a prior timeout, wait out the drain window (inflight is null so any late
+    // reply is ignored), then drop any partial straggler before issuing this command.
+    if (session._drainUntil && Date.now() < session._drainUntil) {
+      await new Promise(r => setTimeout(r, session._drainUntil - Date.now()));
+      session.lineBuffer = '';
+    }
+    session._drainUntil = 0;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return; settled = true;
+        clearTimeout(timer);
+        if (session._inflight === inf) session._inflight = null;
+        fn(arg);
+      };
+      const timer = setTimeout(() => {
+        session._drainUntil = Date.now() + _DRAIN_MS;
+        finish(reject, new Error('Serial command timeout'));
+      }, timeoutMs);
+      const inf = { resolve: (v) => finish(resolve, v), reject: (e) => finish(reject, e), timer };
+      session._inflight = inf;
+      const line = cmd.endsWith('\n') ? cmd : cmd + '\r\n';
+      writeFn(Buffer.from(line, 'utf8'), (err) => { if (err) finish(reject, err); });
+    });
+  });
+  session._cmdChain = result.catch(() => {}); // keep the chain alive regardless of outcome
+  return result;
+}
+
+function _rejectInflight(session, err) {
+  const inf = session._inflight;
+  if (!inf) return;
+  session._inflight = null;
+  clearTimeout(inf.timer);
+  inf.reject(err);
+}
+
 // ── Serialport-based session ──────────────────────────────────────────────────
 
 class SerialSession {
   constructor(devPath) {
-    this.path       = devPath;
-    this.lineBuffer = '';
-    this._cmdQueue  = [];
-    this._type      = 'serialport'; // or 'stty'
+    this.path        = devPath;
+    this.lineBuffer  = '';
+    this._inflight   = null;             // single in-flight command
+    this._cmdChain   = Promise.resolve(); // serialises commands
+    this._drainUntil = 0;                 // post-timeout drain deadline
+    this._type       = 'serialport'; // or 'stty'
   }
 
   open(opts = {}) {
@@ -115,9 +181,11 @@ class SerialSession {
       this.port.on('data', chunk => this._onData(chunk));
       this.port.on('close', () => {
         sessions.delete(this.path);
+        _rejectInflight(this, new Error('Serial port closed'));
         events.emit('serial', { kind: 'serial', type: 'closed', session: this.path });
       });
       this.port.on('error', err => {
+        _rejectInflight(this, new Error(err.message));
         events.emit('serial', { kind: 'serial', type: 'error', message: err.message, session: this.path });
       });
       this.port.open(err => { if (err) reject(err); else resolve(); });
@@ -131,15 +199,7 @@ class SerialSession {
     this.lineBuffer += chunk.toString('utf8');
     const parts = this.lineBuffer.split(/\r\n|\n|\r/);
     this.lineBuffer = parts.pop() ?? '';
-    for (const line of parts) {
-      const t = line.trim();
-      if (!t) continue;
-      if (this._cmdQueue.length > 0 && (t.startsWith('OK') || t.startsWith('ERR'))) {
-        const { resolve: res, reject: rej, timer } = this._cmdQueue.shift();
-        clearTimeout(timer);
-        if (t.startsWith('OK')) res(t.slice(2).trim()); else rej(new Error(t.slice(3).trim() || 'ERR'));
-      }
-    }
+    _feedResponseLines(this, parts);
   }
 
   close() {
@@ -164,23 +224,7 @@ class SerialSession {
 
   command(cmd, timeoutMs = 3000) {
     if (!this.port) return Promise.reject(new Error('Serial port not open'));
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const i = this._cmdQueue.findIndex(q => q.timer === timer);
-        if (i >= 0) this._cmdQueue.splice(i, 1);
-        reject(new Error('Serial command timeout'));
-      }, timeoutMs);
-      this._cmdQueue.push({ resolve, reject, timer });
-      const line = cmd.endsWith('\n') ? cmd : cmd + '\r\n';
-      this.port.write(Buffer.from(line, 'utf8'), err => {
-        if (err) {
-          const i = this._cmdQueue.findIndex(q => q.timer === timer);
-          if (i >= 0) this._cmdQueue.splice(i, 1);
-          clearTimeout(timer);
-          reject(err);
-        }
-      });
-    });
+    return _runCommand(this, (buf, cb) => this.port.write(buf, cb), cmd, timeoutMs);
   }
 }
 
@@ -188,11 +232,13 @@ class SerialSession {
 
 class SttySession {
   constructor(devPath) {
-    this.path       = devPath;
-    this.lineBuffer = '';
-    this._cmdQueue  = [];
-    this._fd        = null;
-    this._reader    = null;
+    this.path        = devPath;
+    this.lineBuffer  = '';
+    this._inflight   = null;
+    this._cmdChain   = Promise.resolve();
+    this._drainUntil = 0;
+    this._fd         = null;
+    this._reader     = null;
   }
 
   open(opts = {}) {
@@ -247,15 +293,7 @@ class SttySession {
           // Handle \r\n, \n, and \r-only line endings
           const parts = this.lineBuffer.split(/\r\n|\n|\r/);
           this.lineBuffer = parts.pop() ?? '';
-          for (const line of parts) {
-            const t = line.trim();
-            if (!t) continue;
-            if (this._cmdQueue.length > 0 && (t.startsWith('OK') || t.startsWith('ERR'))) {
-              const { resolve: res, reject: rej, timer } = this._cmdQueue.shift();
-              clearTimeout(timer);
-              if (t.startsWith('OK')) res(t.slice(2).trim()); else rej(new Error(t.slice(3).trim() || 'ERR'));
-            }
-          }
+          _feedResponseLines(this, parts);
         }
         setTimeout(readLoop, 10);
       });
@@ -267,6 +305,7 @@ class SttySession {
     return new Promise(resolve => {
       const fd = this._fd;
       this._fd = null;
+      _rejectInflight(this, new Error('Serial port closed'));
       if (fd === null) { resolve(); return; }
       fs.close(fd, () => {
         sessions.delete(this.path);
@@ -288,23 +327,7 @@ class SttySession {
 
   command(cmd, timeoutMs = 3000) {
     if (this._fd === null) return Promise.reject(new Error('Serial port not open'));
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const i = this._cmdQueue.findIndex(q => q.timer === timer);
-        if (i >= 0) this._cmdQueue.splice(i, 1);
-        reject(new Error('Serial command timeout'));
-      }, timeoutMs);
-      this._cmdQueue.push({ resolve, reject, timer });
-      const line = Buffer.from(cmd.endsWith('\n') ? cmd : cmd + '\r\n', 'utf8');
-      fs.write(this._fd, line, err => {
-        if (err) {
-          const i = this._cmdQueue.findIndex(q => q.timer === timer);
-          if (i >= 0) this._cmdQueue.splice(i, 1);
-          clearTimeout(timer);
-          reject(err);
-        }
-      });
-    });
+    return _runCommand(this, (buf, cb) => fs.write(this._fd, buf, cb), cmd, timeoutMs);
   }
 }
 
@@ -410,3 +433,5 @@ function isAvailable() {
 }
 
 module.exports = { list, open, close, write, setSignals, command, getStatus, getSession, isAvailable, events };
+// Exported for unit testing the command engine without hardware.
+module.exports._test = { SerialSession, _feedResponseLines, _runCommand };

@@ -90,6 +90,8 @@ function _startIfaceMonitor() {
       if (!live.has(dev)) _dropSendHandle(dev);
     }
   }, 500);
+  // Don't let this watchdog keep the event loop (and thus the process) alive on its own.
+  _ifaceMonitorTimer.unref?.();
 }
 
 // Gracefully close all Cap handles on process exit so libuv poll stops cleanly
@@ -558,22 +560,28 @@ function _recordTxFrame(dev, frame) {
   for (const cb of captureStreamCbs) { try { cb(record); } catch {} }
 }
 
+// Bound the capture buffer so a long-running capture on a busy link can't grow
+// memory without limit. Oldest rows are dropped (ring buffer); captureSeq/no stay
+// monotonic. UI reads are paginated (limit/offset) so the newest rows always show.
+const MAX_CAPTURE_ROWS = 50000;
+
 // Insert record in timestamp order (handles out-of-order delivery from concurrent tcpdump processes)
 function insertCaptureSorted(record) {
   const ts = record.timestamp;
   // Fast path: most packets arrive in order
   if (!captureRows.length || ts >= captureRows[captureRows.length - 1].timestamp) {
     captureRows.push(record);
-    return;
+  } else {
+    // Binary search for insertion point
+    let lo = 0, hi = captureRows.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (captureRows[mid].timestamp <= ts) lo = mid + 1;
+      else hi = mid;
+    }
+    captureRows.splice(lo, 0, record);
   }
-  // Binary search for insertion point
-  let lo = 0, hi = captureRows.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (captureRows[mid].timestamp <= ts) lo = mid + 1;
-    else hi = mid;
-  }
-  captureRows.splice(lo, 0, record);
+  if (captureRows.length > MAX_CAPTURE_ROWS) captureRows.shift(); // drop oldest
 }
 
 function getCaptures(limit = 1000, offset = 0) {

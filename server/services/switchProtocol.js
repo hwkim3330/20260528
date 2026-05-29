@@ -13,6 +13,17 @@ let BASE_ADDRESS = 0x44A00000;
 function hex8(n)  { return '0x' + (n >>> 0).toString(16).toUpperCase().padStart(8, '0'); }
 function parseHex(s) { return parseInt(String(s ?? '0').replace(/^0x/i, ''), 16) || 0; }
 
+// Parse a register-READ response. Unlike parseHex (used for user-supplied addresses,
+// where 0 is a fine default), a read that returns nothing/garbage must FAIL loudly —
+// otherwise a dropped or mis-paired serial reply is silently reported as value 0.
+function parseReadValue(resp) {
+  const m = String(resp ?? '').match(/(?:0x)?([0-9a-f]+)/i);
+  if (!m) throw new Error(`Unexpected register read response: "${resp}"`);
+  const v = parseInt(m[1], 16);
+  if (Number.isNaN(v)) throw new Error(`Unparseable register value: "${resp}"`);
+  return v >>> 0;
+}
+
 /**
  * 절대 주소(>= BASE_ADDRESS)와 상대 오프셋을 모두 허용.
  * TC.csv 등에서 0x44A00080 같은 절대 주소가 오면 그대로 사용하고,
@@ -28,7 +39,7 @@ function resolveAddr(val) {
 async function readRegister(session, offset) {
   const addr = (BASE_ADDRESS + offset) >>> 0;
   const resp = await serialBridge.command(session, `read ${hex8(addr)}`, 3000);
-  return parseHex(resp);
+  return parseReadValue(resp);
 }
 
 async function writeRegister(session, offset, value) {
@@ -41,7 +52,7 @@ async function readAbsolute(session, addr) {
   console.log(`[serial →] ${cmd}  (session=${session})`);
   const resp = await serialBridge.command(session, cmd, 3000);
   console.log(`[serial ←] ${resp}`);
-  return parseHex(resp);
+  return parseReadValue(resp);
 }
 
 async function writeAbsolute(session, addr, value) {
@@ -226,7 +237,7 @@ async function fdbReadBucket(payload) {
   const bucket = payload.bucket ?? 0;
   const slot   = payload.slot   ?? 0;   // 슬롯 비트마스크 (0x1, 0x2, 0x4, 0x8)
 
-  await writeRegister(sid, FDB.OFF_MCU_BUCKET, bucket & 0x3FF);
+  await writeRegister(sid, FDB.OFF_MCU_BUCKET, ((slot & 0xF) << 16) | (bucket & 0x3FF));
   await writeRegister(sid, FDB.OFF_MCU_CMD, CMD.READ_BUCKET);
 
   const st = await pollStatus(sid, 0x1, 500); // STATUS_RD_MAC

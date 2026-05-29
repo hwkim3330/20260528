@@ -150,11 +150,7 @@ function startCaptureTcpdump(ifaceNames, filter, onPacket, onError) {
         const hexStr = frame.toString('hex');
 
         // Suppress tcpdump echo of our own injected TX frames
-        const txKey = iface + hexStr;
-        if (_recentTxHexes.has(txKey)) {
-          if (_recentTxHexes.get(txKey) > Date.now()) { _recentTxHexes.delete(txKey); continue; }
-          _recentTxHexes.delete(txKey);
-        }
+        if (_consumeTxEcho(iface, frame)) continue;
 
         const no      = ++captureSeq;
         const ts      = tsSec + tsUsec / 1e6;
@@ -205,8 +201,8 @@ function hasTcpdump() {
 // ── Unified startCapture ───────────────────────────────────────────────────────
 
 function startCapture(ifaceNames, filter, onPacket, onError) {
-  // Auto-build BPF filter from interface MACs when none is provided
-  const effectiveFilter = filter || (ifaceNames.length ? buildIfaceBpfFilter(ifaceNames) : '');
+  // filter=''(promisc)이면 BPF 필터 미적용, null/undefined일 때만 MAC 기반 필터 자동 생성
+  const effectiveFilter = filter ?? (ifaceNames.length ? buildIfaceBpfFilter(ifaceNames) : '');
 
   if (Cap) {
     // Primary: cap npm
@@ -229,14 +225,7 @@ function startCapture(ifaceNames, filter, onPacket, onError) {
             const frame  = Buffer.from(buf.slice(0, nbytes));
             const hexStr = frame.toString('hex');
             // Suppress libpcap echo of our own injected TX frames
-            const txKey = dev + hexStr;
-            if (_recentTxHexes.has(txKey)) {
-              if (_recentTxHexes.get(txKey) > Date.now()) {
-                _recentTxHexes.delete(txKey);
-                return; // already recorded as TX
-              }
-              _recentTxHexes.delete(txKey);
-            }
+            if (_consumeTxEcho(dev, frame)) return; // already recorded as TX
             const no      = ++captureSeq;
             const ts      = Date.now() / 1000;
             const decoded = decodeFrame(frame);
@@ -302,6 +291,27 @@ function _dropSendHandle(dev) {
 
 // ── Send ───────────────────────────────────────────────────────────────────────
 
+function _isZeroMac(mac) {
+  return !mac || /^0+$/.test(String(mac).replace(/[^0-9a-fA-F]/g, ''));
+}
+
+// Block-mode frames carry their own Ethernet/ARP source MAC. When the client left it
+// all-zero, fill it with the resolved NIC MAC — otherwise block-built frames ship a
+// 00:00:00:00:00:00 source, which scrambles L2 tests (switch flooding, odd ICMP replies).
+function _syncBlockMacs(profile) {
+  if (!profile?.srcMac || !Array.isArray(profile.blocks)) return profile;
+  return {
+    ...profile,
+    blocks: profile.blocks.map((block) => {
+      if (block.type === 'Ethernet' && _isZeroMac(block.srcMac))
+        return { ...block, srcMac: profile.srcMac };
+      if (block.type === 'ARP' && _isZeroMac(block.senderMac))
+        return { ...block, senderMac: profile.srcMac };
+      return block;
+    }),
+  };
+}
+
 async function sendPackets(profile) {
   if (!Cap) throw new Error('cap npm not installed (run: npm install cap)');
 
@@ -328,6 +338,9 @@ async function sendPackets(profile) {
       }
     }
   }
+
+  // Keep block-mode Ethernet/ARP source MAC in sync with the resolved NIC MAC
+  profile = _syncBlockMacs(profile);
 
   _sendInFlight.add(dev);
   try {
@@ -477,14 +490,61 @@ function buildIfaceBpfFilter(ifaceNames) {
 
 function clearCapture() { captureSeq = 0; captureRows = []; _recentTxHexes.clear(); }
 
-// Dedup set: TX frames registered here are suppressed once if libpcap also captures them
-const _recentTxHexes = new Map(); // key: dev+hex → expiry timestamp
+// Dedup: TX frames registered here are suppressed when libpcap/tcpdump echoes them back.
+// Keyed by device + padding-stripped frame hex so offload/padding differences still match,
+// and count-based so repeated identical sends each suppress exactly one echo.
+const _recentTxHexes = new Map(); // key → { until: expiryMs, count }
+const _TX_ECHO_TTL_MS = 2000;
+
+// Strip Ethernet padding so the dedup key reflects the real (unpadded) frame.
+// The NIC/driver may zero-pad short frames to 60B; the manual TX record and the
+// captured echo can then differ only in trailing padding and miss a naive hex match.
+function _effectiveFrame(buf) {
+  if (!Buffer.isBuffer(buf)) buf = Buffer.from(buf || []);
+  if (buf.length < 14) return buf;
+  let etherType = buf.readUInt16BE(12);
+  let l3Offset  = 14;
+  if (etherType === 0x8100 && buf.length >= 18) { // 802.1Q VLAN tag
+    etherType = buf.readUInt16BE(16);
+    l3Offset  = 18;
+  }
+  if (etherType === 0x0800 && buf.length >= l3Offset + 20) { // IPv4: trust Total Length
+    const totalLength = buf.readUInt16BE(l3Offset + 2);
+    const end = l3Offset + totalLength;
+    if (totalLength >= 20 && end <= buf.length) return buf.subarray(0, end);
+  }
+  if (etherType === 0x0806 && buf.length >= l3Offset + 28) { // ARP: fixed 28B payload
+    return buf.subarray(0, l3Offset + 28);
+  }
+  return buf;
+}
+
+function _txKey(dev, frame) {
+  return `${dev}|${_effectiveFrame(frame).toString('hex')}`;
+}
+
+function _rememberTx(dev, frame) {
+  const key = _txKey(dev, frame);
+  const cur = _recentTxHexes.get(key);
+  _recentTxHexes.set(key, { until: Date.now() + _TX_ECHO_TTL_MS, count: (cur?.count || 0) + 1 });
+}
+
+// Returns true if `frame` matches a recently-sent TX frame on `dev`, consuming one echo.
+function _consumeTxEcho(dev, frame) {
+  const key = _txKey(dev, frame);
+  const cur = _recentTxHexes.get(key);
+  if (!cur) return false;
+  if (cur.until < Date.now()) { _recentTxHexes.delete(key); return false; }
+  cur.count -= 1;
+  if (cur.count <= 0) _recentTxHexes.delete(key);
+  else _recentTxHexes.set(key, cur);
+  return true;
+}
 
 function _recordTxFrame(dev, frame) {
   const hexStr = frame.toString('hex');
-  const key    = dev + hexStr;
-  // Register for dedup (suppress one libpcap echo within 300ms)
-  _recentTxHexes.set(key, Date.now() + 300);
+  // Register for dedup so the libpcap/tcpdump echo of this exact frame is suppressed once
+  _rememberTx(dev, frame);
   // Add to capture buffer as TX
   const no      = ++captureSeq;
   const ts      = Date.now() / 1000;

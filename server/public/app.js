@@ -67,6 +67,16 @@ function setStatus(text, ok = true) {
   const dot = $('serverState'); if (dot) dot.classList.toggle('bad', !ok);
 }
 
+// "Port 0", "Port 1" 등의 포트 이름을 portmap에서 실제 NIC 이름으로 변환
+function _resolveIfaceValue(val) {
+  if (!val || val === '-') return '';
+  const m = String(val).match(/^port\s*(\d+)$/i);
+  if (!m) return val; // 직접 NIC 이름인 경우 그대로 반환
+  const portIdx = parseInt(m[1]);
+  const entry = state.portmap.find(e => Number(e.port) === portIdx);
+  return entry?.iface || '';
+}
+
 // Build merged local+remote interface list used by scenario lab selects
 function buildAllIfaces() {
   const local  = state.interfaces.map(i => ({ name: i.name, state: i.state, nodeUrl: null, label: 'Local' }));
@@ -115,7 +125,14 @@ function populateInterfaceSelects() {
   const seqRows = _getSeqRows();
   document.querySelectorAll('.sc-row-iface-sel').forEach(sel => {
     const rowIdx = Number(sel.dataset.rowIdx);
-    const cur = seqRows[rowIdx]?._iface || '';
+    const seqRow = seqRows[rowIdx];
+    if (!seqRow) return;
+    // Interface 컬럼에서 _iface 미설정 시 portmap 로드 후 늦은 해석
+    if (!seqRow._iface) {
+      const ifaceVal = seqRow['Interface'] || '';
+      if (ifaceVal && ifaceVal !== '-') seqRow._iface = _resolveIfaceValue(ifaceVal);
+    }
+    const cur = seqRow._iface || '';
     sel.innerHTML = _ifaceSelectOpts(cur);
     sel.value = cur;
   });
@@ -802,6 +819,13 @@ function buildPacketPayload(pkt) {
                          targetMac: arpB.targetMac || '00:00:00:00:00:00',
                          targetIp:  arpB.targetIp  || '0.0.0.0' };
   if (vlanB) p.vlan = { enabled: true, id: Number(vlanB.vlanId) || 100, priority: Number(vlanB.priority) || 0 };
+  // Guard: IPv4 declares a transport protocol but the matching L4 block is missing.
+  // Sending IPv4 proto=ICMP/UDP/TCP without the real header produces malformed frames.
+  const protoName = String(ipv4B?.protocol || '').toLowerCase();
+  if (ipv4B && ['udp', 'tcp', 'icmp'].includes(protoName)) {
+    const hasL4 = (protoName === 'udp' && udpB) || (protoName === 'tcp' && tcpB) || (protoName === 'icmp' && icmpB);
+    if (!hasL4) throw new Error(`IPv4 protocol=${protoName} 인데 ${protoName.toUpperCase()} 블록이 없습니다.`);
+  }
   p.blocks = blocks;
   return p;
 }
@@ -1619,6 +1643,8 @@ function formatCaptureRow(r) {
     source, destination: dest, protocol, length: r.length, info,
     direction: r.direction || '',
     detailText: JSON.stringify(r.decoded || {}, null, 2),
+    decoded: r.decoded || {},
+    frameHex: r.frameHex || r.hex || '',
     hexDump: formatHex(r.frameHex || r.hex || ''),
     timeRaw: r.timestamp || 0,
   };
@@ -1745,8 +1771,8 @@ async function clearCapture() {
     state.captureIfaceFilter = new Set();
     updateCaptureIfaceFilters();
     renderCaptureRows();
-    if ($('packetDetails')) $('packetDetails').textContent = 'Select a packet.';
-    if ($('packetHex'))     $('packetHex').textContent = '';
+    if ($('packetDetails')) $('packetDetails').innerHTML = '<span style="color:var(--muted)">Select a packet.</span>';
+    if ($('packetHex'))     $('packetHex').innerHTML = '';
     await refreshCaptureStatus();
   } catch { /* ignore */ }
 }
@@ -1883,8 +1909,14 @@ function renderCaptureRows() {
       tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
       tr.classList.add('selected');
       const row = rows[Number(tr.dataset.idx)];
-      if ($('packetDetails')) $('packetDetails').textContent = row.detailText || 'No detail.';
-      if ($('packetHex'))     $('packetHex').textContent = row.hexDump || '';
+      const detEl = $('packetDetails');
+      if (detEl) {
+        detEl.innerHTML = '';
+        detEl.dataset.json = row.detailText || '{}';
+        buildDecodeTreeDOM(detEl, row.decoded || {}, 0);
+        if (!detEl.children.length) detEl.innerHTML = '<span style="color:var(--muted)">No detail.</span>';
+      }
+      if ($('packetHex')) $('packetHex').innerHTML = renderHexHTML(row.frameHex || '');
     });
   });
 }
@@ -1897,29 +1929,16 @@ function downloadCaptureCsv() {
 // ── Scenario Lab ──────────────────────────────────────────────────────────────
 async function loadTestCases() {
   try {
-    const data = await api('/api/testcases/status');
-    const snapshot = data.snapshot || data.testCases || [];
-    const allGroups = Array.isArray(snapshot) ? snapshot : (snapshot.groups || []);
-    // Filter out legacy isPacketDef groups and root-folder groups
-    const groups = allGroups.filter(g => !g.isPacketDef && g.name !== '(root)');
-    const hasRealCases = groups.some(g => (g.cases || []).length > 0);
-    if (!hasRealCases) {
-      // Auto-import CSV files if no test cases exist yet
-      const scan = await api('/api/testcases/scan-scenarios').catch(() => null);
-      if (scan?.files?.length) {
-        await api('/api/testcases/import-all-csv', { method: 'POST', body: '{}' }).catch(() => null);
-        const d2 = await api('/api/testcases/status');
-        const g2 = d2.snapshot || [];
-        const groups2 = (Array.isArray(g2) ? g2 : (g2.groups || [])).filter(g => !g.isPacketDef && g.name !== '(root)');
-        renderTcTree(groups2);
-        return;
-      }
-    }
+    // CSV에서 직접 읽어 Test_Scenario_ID → TC_ID 순 정렬된 그룹 사용
+    const data = await api('/api/testcases/sorted-groups');
+    const groups = (data.groups || []).filter(g => !g.isPacketDef && g.name !== '(root)');
     renderTcTree(groups);
   } catch { /* ignore */ }
 }
 
 async function loadSequence() {
+  // CSV 모드(시나리오 탭에서 TC/CSV 로드된 상태)에서는 서버 시퀀스로 덮어쓰지 않음
+  if (state.selectedCsvPath || state.tcSeqList.length) return;
   try {
     const data = await api('/api/sequence/full');
     const items = data.items || [];
@@ -1982,10 +2001,13 @@ function seqEventSummary(item) {
   if (t === 'fdbwrite')        return `MAC:${item.mac}  Port:${item.port}`;
   if (t === 'fdbwritebucket')  return `MAC:${item.mac}  Bucket:${item.bucket}  Slot:${item.slot}`;
   if (t === 'fdbread')         return `MAC:${item.mac}`;
+  if (t === 'fdbverify')       return `MAC:${item.mac}  Port:${item.expectedPort}${item.expectedAbsent==='1'||item.expectedAbsent===true?' (absent)':''}`;
+
   if (t === 'fdbreadbucket')   return `Bucket:${item.bucket}  Slot:${item.slot}`;
   if (t === 'fdbwaitfor')      return `MAC:${item.mac}`;
   if (t === 'fdbinitialize')   return 'flush all';
-  if (t === 'rxverify')        return `if:${item.captureInterface||'?'}  filter:${item.captureFilter||''}  expect:${item.captureExpected||1}`;
+  if (t === 'rxverify')        return `expected:${item.expected||'?'}  timeout:${item.timeoutMs||''}`;
+
   return JSON.stringify(item).slice(0,60);
 }
 
@@ -2130,18 +2152,22 @@ const EVENT_FIELDS = {
   FdbRead:        [{ id:'mac',       label:'MAC',        type:'text',     def:'00:00:00:00:00:00' },
                    { id:'vlanId',    label:'VLAN ID',    type:'number',   def:'0' },
                    { id:'vlanValid', label:'VLAN Valid', type:'checkbox', def:false }],
+  FdbVerify:      [{ id:'mac',            label:'MAC',             type:'text',     def:'00:00:00:00:00:00' },
+                   { id:'vlanId',         label:'VLAN ID',         type:'number',   def:'0' },
+                   { id:'vlanValid',      label:'VLAN Valid',      type:'checkbox', def:false },
+                   { id:'expectedPort',   label:'Expected Port',   type:'text',     def:'0' },
+                   { id:'expectedAbsent', label:'Expected Absent', type:'checkbox', def:false }],
   FdbReadBucket:  [{ id:'bucket',           label:'Bucket',          type:'number', def:'0' },
                    { id:'slot',             label:'Slot (hex)',       type:'text',   def:'0x1' }],
   FdbInitialize:  [],
-  RxVerify:       [{ id:'captureInterface', label:'Interface',       type:'text',   def:'' },
-                   { id:'captureFilter',    label:'Filter (text)',   type:'text',   def:'' },
-                   { id:'captureExpected',  label:'Min frames',      type:'number', def:'1' }],
+  RxVerify:       [{ id:'expected',  label:'Expected (port bitmask)', type:'text', def:'0b000001' },
+                   { id:'timeoutMs', label:'Timeout',                 type:'text', def:'1000ms'   }],
 };
 
 const EVENT_API_TYPE = {
   Delay:'delay', RegWrite:'registerWrite', RegRead:'registerRead', RegVerify:'registerExpect',
   FdbWrite:'fdbWrite', FdbWriteBucket:'fdbWriteBucket', FdbRead:'fdbRead', FdbReadBucket:'fdbReadBucket',
-  FdbInitialize:'fdbInitialize', RxVerify:'rxVerify',
+  FdbVerify:'fdbVerify', FdbInitialize:'fdbInitialize', RxVerify:'rxVerify',
 };
 
 // Reverse map: lowercased API-type string → EVENT_FIELDS kind key
@@ -2153,6 +2179,7 @@ const EVENT_KIND_BY_API_TYPE = (() => {
   m['regread']       = 'RegRead';
   m['regverify']     = 'RegVerify';
   m['fdbinitialize'] = 'FdbInitialize';
+  m['fdbverify']     = 'FdbVerify';
   m['packet']        = 'Packet';
   return m;
 })();
@@ -2177,6 +2204,8 @@ function getRowField(row, fieldId) {
     captureInterface: ['CaptureInterface'],
     captureFilter:    ['CaptureFilter', 'Filter'],
     captureExpected:  ['CaptureExpected'],
+    expectedPort:     ['ExpectedPort'],
+    expectedAbsent:   ['ExpectedAbsent'],
   };
   for (const alt of (csvAlt[fieldId] || [])) {
     const a = row[alt];
@@ -2260,11 +2289,14 @@ function updateRowFromEditor() {
       bucket: 'Bucket', slot: 'Slot', expected: 'Expected', mask: 'Mask',
       timeoutMs: 'Timeout', delayMs: 'Timeout',
       captureInterface: 'CaptureInterface', captureFilter: 'CaptureFilter', captureExpected: 'CaptureExpected',
+      expectedPort: 'ExpectedPort', expectedAbsent: 'ExpectedAbsent',
     };
     for (const f of EVENT_FIELDS[kind] || []) {
       const el = $(`eef-${f.id}`); if (!el) continue;
       const val = f.type === 'number' ? Number(el.value) : f.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
-      row[toCSV[f.id] || f.id] = String(val);
+      const csvKey = toCSV[f.id] || f.id;
+      row[csvKey] = String(val);
+      if (csvKey !== f.id) row[f.id] = String(val); // camelCase 키도 동기화 (getRowField 우선순위)
     }
     _setSeqRows(rows);
   }
@@ -2311,6 +2343,31 @@ async function addEventFromEditor() {
   const btn = $('addToSequence');
   const kind = btn?.dataset.evKind;
   if (!kind) return;
+
+  // CSV 모드: 서버 API 대신 로컬 시퀀스에 직접 추가 (renderSequenceRows 호출 방지)
+  if (state.selectedCsvPath || state.tcSeqList.length) {
+    const toCSV = {
+      address:'Address', value:'Value', mac:'MAC', vlanId:'VlanID', vlanValid:'VlanValid', port:'Port',
+      bucket:'Bucket', slot:'Slot', expected:'Expected', mask:'Mask',
+      timeoutMs:'Timeout', delayMs:'Timeout',
+      captureInterface:'CaptureInterface', captureFilter:'CaptureFilter', captureExpected:'CaptureExpected',
+    };
+    const newRow = { Name: kind, EventType: EVENT_API_TYPE[kind] || kind, MAC: '-', Timeout: '' };
+    for (const f of EVENT_FIELDS[kind] || []) {
+      const el = $(`eef-${f.id}`); if (!el) continue;
+      const val = f.type === 'number' ? Number(el.value) : f.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+      newRow[toCSV[f.id] || f.id] = String(val);
+    }
+    const rows = _getSeqRows();
+    const idx = state.selectedSeqRowIdx >= 0 ? state.selectedSeqRowIdx + 1 : rows.length;
+    rows.splice(idx, 0, newRow);
+    state.selectedSeqRowIdx = idx;
+    _setSeqRows(rows);
+    toast(`${kind} added`, 'ok');
+    return;
+  }
+
+  // 레거시: 서버 시퀀스 API 경로
   const event = { eventType: EVENT_API_TYPE[kind] || kind.toLowerCase() };
   for (const f of EVENT_FIELDS[kind] || []) {
     const el = $(`eef-${f.id}`); if (!el) continue;
@@ -2725,6 +2782,13 @@ function renderCsvSequence(rows) {
     tbody.innerHTML = '';
     return;
   }
+  // Packet 행의 Interface 컬럼("Port 0" 등)을 _iface로 해석 (미설정인 경우만)
+  rows.forEach(row => {
+    if ((row['EventType'] || '').toLowerCase() === 'packet' && !row._iface) {
+      const ifaceVal = row['Interface'] || '';
+      if (ifaceVal && ifaceVal !== '-') row._iface = _resolveIfaceValue(ifaceVal);
+    }
+  });
   tbody.innerHTML = rows.map((row, i) => {
     const idx     = row['Index'] !== undefined ? row['Index'] : String(i + 1);
     const name    = row['Name'] || '';
@@ -3273,15 +3337,44 @@ async function executeEvent(row, iface, ctx = {}) {
     try {
       const data = await api('/api/fdb/read', { method: 'POST', body: JSON.stringify({ mac, vlanId, vlanValid }) });
       if (data.ok === false) return { ok: false, error: data.error || 'FDB read failed' };
-      const found = data.entry?.found ?? false;
-      return found ? { ok: true, detail: JSON.stringify(data.entry) } : { ok: false, error: `MAC not found: ${mac}` };
+      const e = data.entry || {};
+      const detail = e.found
+        ? `found mac=${e.mac} port=${e.port} bucket=${e.bucket}`
+        : `not found: ${mac}`;
+      return { ok: true, detail };
+    } catch (e) { return { ok: false, error: e.message }; }
+  }
+
+  // ── FdbVerify ─────────────────────────────────────────────────────────────────
+  if (evType === 'fdbverify') {
+    const mac            = row['MAC'] || row['mac'] || '';
+    const vlanId         = parseInt(row['VlanID'] || row['VlanId'] || row['vlanid'] || '0') || 0;
+    const vlanValid      = parseVlanValid(row);
+    const expectedPort   = parseBinPort(row['ExpectedPort'] || row['expectedPort'] || '0');
+    const rawAbsent      = row['ExpectedAbsent'] || row['expectedAbsent'] || '';
+    const expectedAbsent = ['1','y','yes','true'].includes(String(rawAbsent).toLowerCase().trim()) || rawAbsent === true;
+    if (!mac || mac === '-') return { ok: false, error: 'No MAC' };
+    try {
+      const data = await api('/api/fdb/read', { method: 'POST', body: JSON.stringify({ mac, vlanId, vlanValid }) });
+      if (data.ok === false) return { ok: false, error: data.error || 'FDB read failed' };
+      const entry = data.entry || {};
+      if (expectedAbsent) {
+        return entry.found
+          ? { ok: false, error: `Expected absent but MAC found (port=${entry.port})` }
+          : { ok: true, detail: `absent confirmed` };
+      }
+      if (!entry.found) return { ok: false, error: `MAC not found: ${mac}` };
+      const portMatch = (entry.port & 0x1FF) === (expectedPort & 0x1FF);
+      return portMatch
+        ? { ok: true,  detail: `port=${entry.port} (expected ${expectedPort})` }
+        : { ok: false, error: `Port mismatch: got ${entry.port}, expected ${expectedPort}` };
     } catch (e) { return { ok: false, error: e.message }; }
   }
 
   // ── FdbReadBucket (TC_BucketCapacityCheck: Bucket, Slot, Expected=MAC) ────────
   if (evType === 'fdbreadbucket') {
     const bucket   = parseInt(row['Bucket'] || row['bucket'] || '0') || 0;
-    const slotMask = parseInt(String(row['Slot'] || row['slot'] || '0').replace(/^0x/i,''), 16) || 0;
+    const slotMask = parseInt(String(row['Slot'] || row['slot'] || '0x1').replace(/^0x/i,''), 16) || 1;
     const expected = (row['Expected'] || row['expected'] || '').trim();
     try {
       const data = await api('/api/fdb/read-bucket', { method: 'POST', body: JSON.stringify({ bucket, slot: slotMask }) });
@@ -3315,44 +3408,97 @@ async function executeEvent(row, iface, ctx = {}) {
     } catch (e) { return { ok: false, error: e.message }; }
   }
 
-  // ── RxVerify — capture frames and verify count ───────────────────────────────
+  // ── RxVerify — 포트 비트맵 기반 수신 검증 ───────────────────────────────────
   if (evType === 'rxverify') {
-    const captureIface    = row['CaptureInterface'] || row['captureInterface'] || row['Interface'] || '';
-    const captureExpected = parseInt(row['CaptureExpected'] || row['captureExpected'] || '1') || 1;
-    const timeoutMs       = parseInt(row['Timeout'] || row['timeout'] || '3000') || 3000;
-    // Use Expected (dst MAC) as filter; fall back to CaptureFilter
-    const rawFilter = (row['Expected'] || row['expected'] || row['CaptureFilter'] || row['captureFilter'] || '').trim();
-    const macFilter = /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(rawFilter)
-      ? rawFilter.replace(/:/g, '').toLowerCase()
-      : rawFilter.toLowerCase();
+    const expectedBitmap = parseBinPort(row['Expected'] || row['expected'] || '0');
+    const timeoutMs      = parseInt(row['Timeout'] || row['timeout'] || '1000') || 1000;
+
+    // 비트맵에서 기대 포트 번호 추출 (0b000000이면 "수신 없어야 함" 검증)
+    const expectedPorts = [];
+    for (let i = 0; i < 8; i++) { if (expectedBitmap & (1 << i)) expectedPorts.push(i); }
+
+    // portmap → 로컬 / Node B 분리
+    // expected=0b000000이면 전체 포트 대상으로 캡처 ("수신 없어야 함" 검증)
+    const scanPorts = expectedPorts.length
+      ? expectedPorts
+      : state.portmap.map(e => Number(e.port));
+    const localIfaces = [], nodeBIfaceMap = new Map();
+    for (const p of scanPorts) {
+      const entry = state.portmap.find(e => Number(e.port) === p);
+      if (!entry?.iface) continue;
+      if (entry.nodeUrl) {
+        const list = nodeBIfaceMap.get(entry.nodeUrl) || [];
+        list.push(entry.iface);
+        nodeBIfaceMap.set(entry.nodeUrl, list);
+      } else {
+        localIfaces.push(entry.iface);
+      }
+    }
+    if (!localIfaces.length && !nodeBIfaceMap.size) {
+      return { ok: false, error: `RxVerify: portmap에 0b${expectedBitmap.toString(2)} 해당 포트 없음 — Settings 확인` };
+    }
+
+    // 폴링 시 모든 Node B URL 대상 (expected 외 포트 수신도 감지)
+    const allNodeBUrls = [...new Set(
+      state.portmap.filter(e => e.nodeUrl).map(e => e.nodeUrl)
+    )];
+
     try {
       if (!ctx.capturePrestarted) {
-        // Capture was NOT pre-started — clear buffer and start now
-        // (sent frame was already recorded as TX by packetBackend, so it survives the clear
-        //  only when pre-started; without pre-start we accept missing the specific TX frame)
-        await api('/api/capture/clear', { method: 'POST', body: '{}' });
-        const ifaces = captureIface ? [captureIface] : [];
-        await api('/api/capture/start', { method: 'POST', body: JSON.stringify({ interfaces: ifaces }) });
+        // portmap 전체 인터페이스 캡처 시작
+        const allLocalIfaces = state.portmap.filter(e => !e.nodeUrl && e.iface).map(e => e.iface);
+        const allNodeBIfaceMap = new Map();
+        for (const e of state.portmap.filter(e => e.nodeUrl && e.iface)) {
+          const list = allNodeBIfaceMap.get(e.nodeUrl) || [];
+          list.push(e.iface);
+          allNodeBIfaceMap.set(e.nodeUrl, list);
+        }
+
+        const clearPs = [api('/api/capture/clear', { method: 'POST', body: '{}' })];
+        for (const url of allNodeBUrls)
+          clearPs.push(fetch(`${url}/api/capture/clear`, { method: 'POST', headers: {'content-type':'application/json'}, body: '{}' }).catch(() => {}));
+        await Promise.all(clearPs);
+
+        const startPs = [];
+        if (allLocalIfaces.length)
+          startPs.push(api('/api/capture/start', { method: 'POST', body: JSON.stringify({ interfaces: allLocalIfaces, promisc: true }) }));
+        for (const [url, ifaces] of allNodeBIfaceMap)
+          startPs.push(fetch(`${url}/api/capture/start`, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ interfaces: ifaces, promisc: true }) }).catch(() => {}));
+        await Promise.all(startPs);
       }
 
       const deadline = Date.now() + timeoutMs;
-      let matched = 0;
+      const receivedPorts = new Set();
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 200));
-        const data = await api('/api/capture/packets?limit=1000');
-        const pkts = data.rows || [];
-        const hits = macFilter
-          ? pkts.filter(r => (r.frameHex || '').toLowerCase().includes(macFilter)
-              || JSON.stringify(r.decoded || {}).toLowerCase().includes(macFilter))
-          : pkts;
-        matched = hits.length;
-        if (matched >= captureExpected) break;
+        const fetches = [api('/api/capture/packets?limit=1000')];
+        for (const url of allNodeBUrls)
+          fetches.push(fetch(`${url}/api/capture/packets?limit=1000`, { signal: AbortSignal.timeout(3000) }).then(r => r.json()).catch(() => ({ rows: [] })));
+        const results = await Promise.all(fetches);
+        for (const data of results) {
+          for (const pkt of (data.rows || [])) {
+            if (pkt.direction === 'TX') continue;
+            const entry = state.portmap.find(e => e.iface === pkt.interface);
+            if (entry !== undefined) receivedPorts.add(Number(entry.port));
+          }
+        }
+        if (expectedPorts.every(p => receivedPorts.has(p))) break;
       }
-      await api('/api/capture/stop', { method: 'POST', body: '{}' });
 
-      return matched >= captureExpected
-        ? { ok: true,  detail: `${matched}/${captureExpected} frames captured` }
-        : { ok: false, error: `RxVerify: only ${matched}/${captureExpected} frames in ${timeoutMs}ms` };
+      const stopPs = [api('/api/capture/stop', { method: 'POST', body: '{}' })];
+      for (const url of allNodeBUrls)
+        stopPs.push(fetch(`${url}/api/capture/stop`, { method: 'POST', headers: {'content-type':'application/json'}, body: '{}' }).catch(() => {}));
+      await Promise.all(stopPs);
+
+      const gotBitmap   = [...receivedPorts].reduce((acc, p) => acc | (1 << p), 0);
+      const rawStr = String(row['Expected'] || row['expected'] || '0');
+      const origLen = rawStr.startsWith('0b') || rawStr.startsWith('0B')
+        ? rawStr.length - 2 : Math.max(expectedBitmap.toString(2).length, gotBitmap.toString(2).length);
+      const padLen = Math.max(origLen, gotBitmap.toString(2).length);
+      const allReceived = gotBitmap === expectedBitmap;
+      return allReceived
+        ? { ok: true,  detail: `received 0b${gotBitmap.toString(2).padStart(padLen, '0')}` }
+        : { ok: false, error:  `expected 0b${expectedBitmap.toString(2).padStart(padLen,'0')}, got 0b${gotBitmap.toString(2).padStart(padLen,'0')} in ${timeoutMs}ms` };
     } catch (e) { return { ok: false, error: `RxVerify error: ${e.message}` }; }
   }
 
@@ -3403,14 +3549,17 @@ async function runSeqSequence() {
     renderCsvSequence(tc.rows || []);
 
     let tcOk = true;
+    let nextCapturePrestarted_seq = false;
     for (let j = 0; j < (tc.rows || []).length; j++) {
       if (state._runAbort) break;
       const row = tc.rows[j];
       const ev  = (row['EventType'] || row['Event Type'] || '').toLowerCase();
       setRowResult(j, '…', '');
+      const capturePrestarted = nextCapturePrestarted_seq;
+      nextCapturePrestarted_seq = false;
       let res;
       try {
-        const capturePrestarted = await _maybePreStartCapture(tc.rows, j);
+        if (await _maybePreStartCapture(tc.rows, j)) nextCapturePrestarted_seq = true;
         res = await executeEvent(row, iface, { capturePrestarted });
       }
       catch (err) { res = { ok: false, error: err.message }; }
@@ -3457,6 +3606,7 @@ async function scenarioSendSelected() {
   if (statsEl) statsEl.textContent = `S: ${t0.toLocaleTimeString()} | E: —`;
   appendSeqTerm(`▶ Send Selected (${checkedIdxs.length} rows)…`);
 
+  let nextCapturePrestarted_sel = false;
   for (let ci = 0; ci < checkedIdxs.length; ci++) {
     if (state._runAbort) break;
     const idx  = checkedIdxs[ci];
@@ -3464,11 +3614,13 @@ async function scenarioSendSelected() {
     const row  = rows[idx];
     const ev   = (row['EventType'] || row['Event Type'] || '').toLowerCase();
     setRowResult(idx, '…', '');
+    const capturePrestarted = nextCapturePrestarted_sel;
+    nextCapturePrestarted_sel = false;
     let res;
     try {
       // Build a virtual adjacent-row pair so look-ahead works on sparse selections
       const pairRows = nextIdx >= 0 ? [rows[idx], rows[nextIdx]] : [rows[idx]];
-      const capturePrestarted = await _maybePreStartCapture(pairRows, 0);
+      if (await _maybePreStartCapture(pairRows, 0)) nextCapturePrestarted_sel = true;
       res = await executeEvent(row, iface, { capturePrestarted });
     }
     catch (err) { res = { ok: false, error: err.message }; }
@@ -3502,14 +3654,17 @@ async function scenarioSendList() {
   if (statsEl) statsEl.textContent = `S: ${t0.toLocaleTimeString()} | E: —`;
   appendSeqTerm(`▶ Send List (${rows.length} rows)…`);
 
+  let nextCapturePrestarted_list = false;
   for (let i = 0; i < rows.length; i++) {
     if (state._runAbort) break;
     const row = rows[i];
     const ev  = (row['EventType'] || row['Event Type'] || '').toLowerCase();
     setRowResult(i, '…', '');
+    const capturePrestarted = nextCapturePrestarted_list;
+    nextCapturePrestarted_list = false;
     let res;
     try {
-      const capturePrestarted = await _maybePreStartCapture(rows, i);
+      if (await _maybePreStartCapture(rows, i)) nextCapturePrestarted_list = true;
       res = await executeEvent(row, iface, { capturePrestarted });
     }
     catch (err) { res = { ok: false, error: err.message }; }
@@ -3535,12 +3690,34 @@ async function _maybePreStartCapture(rows, currentIdx) {
   const curEv  = (cur['EventType']  || cur['Event Type']  || '').toLowerCase().trim();
   const nextEv = (next['EventType'] || next['Event Type'] || '').toLowerCase().trim();
   if (curEv !== 'packet' || nextEv !== 'rxverify') return false;
-  const captureIface = next['CaptureInterface'] || next['captureInterface'] || next['Interface'] || '';
-  const ifaces = captureIface ? [captureIface] : [];
+
+  // portmap 전체 인터페이스 캡처 (수신된 포트를 빠짐없이 확인)
+  const localIfaces = [], nodeBIfaceMap = new Map();
+  for (const entry of state.portmap) {
+    if (!entry?.iface) continue;
+    if (entry.nodeUrl) {
+      const list = nodeBIfaceMap.get(entry.nodeUrl) || [];
+      list.push(entry.iface);
+      nodeBIfaceMap.set(entry.nodeUrl, list);
+    } else {
+      localIfaces.push(entry.iface);
+    }
+  }
+
   try {
-    await api('/api/capture/clear', { method: 'POST', body: '{}' });
-    await api('/api/capture/start', { method: 'POST', body: JSON.stringify({ interfaces: ifaces }) });
-  } catch { /* ignore — rxverify will restart on its own */ return false; }
+    const clearPs = [api('/api/capture/clear', { method: 'POST', body: '{}' })];
+    for (const [url] of nodeBIfaceMap)
+      clearPs.push(fetch(`${url}/api/capture/clear`, { method: 'POST', headers: {'content-type':'application/json'}, body: '{}' }).catch(() => {}));
+    await Promise.all(clearPs);
+
+    const startPs = [];
+    if (localIfaces.length)
+      startPs.push(api('/api/capture/start', { method: 'POST', body: JSON.stringify({ interfaces: localIfaces, promisc: true }) }));
+    for (const [url, ifaces] of nodeBIfaceMap)
+      startPs.push(fetch(`${url}/api/capture/start`, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ interfaces: ifaces, promisc: true }) }).catch(() => {}));
+    await Promise.all(startPs);
+  } catch { return false; }
+  // 항상 true 반환 → RxVerify가 자체 capture/clear 호출 안 함 (TX 프레임 보존)
   return true;
 }
 
@@ -3783,22 +3960,36 @@ async function fdbCtrlReadConfig() {
   try{
     const ver=await fdbReg(FDB_OFF.VERSION);if($('rv-fdb-ver'))$('rv-fdb-ver').value=`0x${ver.toString(16).toUpperCase().padStart(8,'0')}`;
     const en=await fdbReg(FDB_OFF.ENABLE);if($('rv-fdb-age-scan'))$('rv-fdb-age-scan').checked=(en&(1<<4))!==0;if($('rv-fdb-learning'))$('rv-fdb-learning').checked=(en&(1<<1))!==0;if($('rv-fdb-lookup'))$('rv-fdb-lookup').checked=(en&1)!==0;
-    const ap=await fdbReg(FDB_OFF.AGE_PERIOD),at=await fdbReg(FDB_OFF.AGING_THR);if($('rv-fdb-age-period'))$('rv-fdb-age-period').value=ap;if($('rv-fdb-aging-thr'))$('rv-fdb-aging-thr').value=at;
+    const ap=(await fdbReg(FDB_OFF.AGE_PERIOD))&0xFFFFFF;   // [23:0] 유효
+    const at=(await fdbReg(FDB_OFF.AGING_THR))&0xFFFF;      // [15:0] 유효
+    if($('rv-fdb-age-period'))$('rv-fdb-age-period').value=ap;
+    if($('rv-fdb-aging-thr'))$('rv-fdb-aging-thr').value=at;
     setRegStatus('rv-st-fdb-ctrl','Read OK',true);
   }catch(err){setRegStatus('rv-st-fdb-ctrl',`Error: ${err.message}`,false);}
 }
 
 async function fdbCtrlApplyEnable() {
-  let en=0;if($('rv-fdb-age-scan')?.checked)en|=(1<<4);if($('rv-fdb-learning')?.checked)en|=(1<<1);if($('rv-fdb-lookup')?.checked)en|=1;
   setRegStatus('rv-st-fdb-ctrl','Applying...',false);
-  try{await fdbWr(FDB_OFF.ENABLE,en);setRegStatus('rv-st-fdb-ctrl','ENABLE applied',true);}
-  catch(err){setRegStatus('rv-st-fdb-ctrl',`Error: ${err.message}`,false);}
+  try {
+    let en=0;if($('rv-fdb-age-scan')?.checked)en|=(1<<4);if($('rv-fdb-learning')?.checked)en|=(1<<1);if($('rv-fdb-lookup')?.checked)en|=1;
+    const ap = (parseInt($('rv-fdb-age-period')?.value||'0')||0) & 0xFFFFFF;  // [23:0]
+    const at = (parseInt($('rv-fdb-aging-thr')?.value||'0')||0) & 0xFFFF;    // [15:0]
+    await fdbWr(FDB_OFF.ENABLE, en);
+    await fdbWr(FDB_OFF.AGE_PERIOD, ap);
+    await fdbWr(FDB_OFF.AGING_THR, at);
+    setRegStatus('rv-st-fdb-ctrl','Applied',true);
+  } catch(err){setRegStatus('rv-st-fdb-ctrl',`Error: ${err.message}`,false);}
 }
 
 async function fdbCtrlLoadDefault() {
   setRegStatus('rv-st-fdb-ctrl','Loading...',false);
-  try{await fdbWr(FDB_OFF.FDB_LOAD,1);setRegStatus('rv-st-fdb-ctrl','Default Load OK',true);}
-  catch(err){setRegStatus('rv-st-fdb-ctrl',`Error: ${err.message}`,false);}
+  try {
+    await fdbWr(FDB_OFF.ENABLE,     0x01);     // Lookup Enable
+    await fdbWr(FDB_OFF.AGE_PERIOD, 0xF4240);  // 1,000,000 ns
+    await fdbWr(FDB_OFF.AGING_THR,  0xBB8);    // 3,000
+    await fdbCtrlReadConfig();
+    setRegStatus('rv-st-fdb-ctrl','Default Load OK',true);
+  } catch(err) { setRegStatus('rv-st-fdb-ctrl',`Error: ${err.message}`,false); }
 }
 
 // ── INTERRUPT ─────────────────────────────────────────────────────────────────
@@ -4001,9 +4192,24 @@ async function countRead() {
 // ── MDIO ──────────────────────────────────────────────────────────────────────
 const MDIO_PHY_ADDRS=[0x00,0x04,0x05,0x08,0x0A,0x0C];
 
+// Per-port setup cache populated by mdioReadAllLink(); null = not yet read
+let _mdioSetupsCache = null;
+
+function _applyMdioSetupToUI(setup) {
+  if (!setup) return;
+  if ($('rv-mdio-en'))    $('rv-mdio-en').checked     = setup.enable     ?? false;
+  if ($('rv-mdio-predis'))$('rv-mdio-predis').checked = setup.preDisable ?? false;
+  if ($('rv-mdio-intr'))  $('rv-mdio-intr').checked   = setup.intrEnable ?? false;
+  if ($('rv-mdio-clk'))   $('rv-mdio-clk').value      = String(setup.clk  ?? 20);
+  if ($('rv-mdio-ms'))    $('rv-mdio-ms').value        = String(setup.ms   ?? 2500);
+  if ($('rv-mdio-unit'))  $('rv-mdio-unit').value      = String(setup.unit ?? 100);
+  if ($('rv-mdio-mhz'))   $('rv-mdio-mhz').value       = String(setup.targetMhz ?? 2.5);
+}
+
 function mdioPortChanged() {
   const port=parseInt($('rv-mdio-port')?.value||'0'),phy=MDIO_PHY_ADDRS[port]??0;
   if($('rv-mdio-phy-addr'))$('rv-mdio-phy-addr').value=`0x${phy.toString(16).toUpperCase().padStart(2,'0')}`;
+  if (_mdioSetupsCache) _applyMdioSetupToUI(_mdioSetupsCache[port] ?? null);
 }
 
 function mdioCalcMdc() {
@@ -4011,6 +4217,31 @@ function mdioCalcMdc() {
   const ahbMhz=100.0,clk=Math.max(1,Math.min(255,Math.round(ahbMhz/(2.0*mhz)))),ms=Math.max(1,Math.min(4095,Math.round(mhz*1000.0)));
   if($('rv-mdio-clk'))$('rv-mdio-clk').value=String(clk);if($('rv-mdio-ms'))$('rv-mdio-ms').value=String(ms);if($('rv-mdio-unit'))$('rv-mdio-unit').value='100';
   setRegStatus('rv-st-mdio',`f_MDC ≈ ${(ahbMhz/(2.0*clk)).toFixed(3)} MHz  (CLK=${clk}, MILLISEC=${ms})`,true);
+}
+
+async function mdioReadSetup() {
+  const port = parseInt($('rv-mdio-port')?.value || '0');
+  const base = 0x0080 + port * 0x0040;
+  const setupOff = `0x${base.toString(16).toUpperCase().padStart(8, '0')}`;
+  const timeOff  = `0x${(base + 0x0004).toString(16).toUpperCase().padStart(8, '0')}`;
+  setRegStatus('rv-st-mdio', 'Reading...', true);
+  try {
+    const [sd, td] = await Promise.all([
+      api('/api/register/read', { method: 'POST', body: JSON.stringify({ offset: setupOff }) }),
+      api('/api/register/read', { method: 'POST', body: JSON.stringify({ offset: timeOff  }) }),
+    ]);
+    const setupVal = parseInt((sd.value || '0').replace(/^0x/i, ''), 16) || 0;
+    const timeVal  = parseInt((td.value || '0').replace(/^0x/i, ''), 16) || 0;
+    const enable     = Boolean(setupVal & 0x00010000);
+    const preDisable = Boolean(setupVal & 0x01000000);
+    const intrEnable = Boolean(setupVal & 0x80000000);
+    const clk  = timeVal & 0xFF;
+    const ms   = (timeVal >>> 8) & 0xFFF;
+    const unit = (timeVal >>> 20) & 0xFFF;
+    const targetMhz = ms > 0 ? parseFloat((ms / 1000).toFixed(3)) : 2.5;
+    _applyMdioSetupToUI({ enable, preDisable, intrEnable, clk, ms, unit, targetMhz });
+    setRegStatus('rv-st-mdio', `Port ${port}: SETUP=0x${setupVal.toString(16).toUpperCase().padStart(8,'0')}`, true);
+  } catch(err) { setRegStatus('rv-st-mdio', `Error: ${err.message}`, false); }
 }
 
 async function mdioApplySetup() {
@@ -4036,8 +4267,26 @@ async function mdioWritePhy() {
 
 async function mdioReadAllLink() {
   setRegStatus('rv-st-mdio-link','Reading...',true);
-  try{const data=await api('/api/mdio/link-status');if(data.ports){data.ports.forEach(p=>{const td=$(`rv-mdio-link-${p.port}`);if(!td)return;const linked=p.linkUp===true,label=p.linkUp===null?'—':(p.linkUp?'Link UP':'Link DOWN');td.innerHTML=`<span class="led-dot${linked?' connected':''}"></span> ${label}`;});}setRegStatus('rv-st-mdio-link',`Updated ${new Date().toLocaleTimeString()}`,true);}
-  catch(err){setRegStatus('rv-st-mdio-link',`Error: ${err.message}`,false);}
+  try {
+    const data = await api('/api/mdio/link-status');
+    if (data.ports) {
+      data.ports.forEach(p => {
+        const td = $(`rv-mdio-link-${p.port}`);
+        if (!td) return;
+        const linked = p.linkUp === true;
+        const label  = p.linkUp === null ? '—' : (p.linkUp ? 'Link UP' : 'Link DOWN');
+        td.innerHTML = `<span class="led-dot${linked?' connected':''}"></span> ${label}`;
+      });
+      // Cache per-port setup data and populate SETUP fields for the current port
+      _mdioSetupsCache = data.ports.map(p => p.setup ?? null);
+      const curPort = parseInt($('rv-mdio-port')?.value || '0');
+      _applyMdioSetupToUI(_mdioSetupsCache[curPort] ?? null);
+      setRegStatus('rv-st-mdio', `Read from HW (Port ${curPort})`, true);
+    }
+    setRegStatus('rv-st-mdio-link', `Updated ${new Date().toLocaleTimeString()}`, true);
+  } catch(err) {
+    setRegStatus('rv-st-mdio-link', `Error: ${err.message}`, false);
+  }
 }
 
 function initRegViewer() {
@@ -4083,10 +4332,11 @@ function initRegViewer() {
   $('rv-count-read')?.addEventListener('click',countRead);
   $('rv-count-clear')?.addEventListener('click',()=>{const tbody=$('rv-count-tbody');if(tbody)tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);">No data</td></tr>';setRegStatus('rv-st-count','',true);});
 
-  $('rv-mdio-port')?.addEventListener('change',mdioPortChanged);$('rv-mdio-calc')?.addEventListener('click',mdioCalcMdc);$('rv-mdio-apply')?.addEventListener('click',mdioApplySetup);$('rv-mdio-read-phy')?.addEventListener('click',mdioReadPhy);$('rv-mdio-write-phy')?.addEventListener('click',mdioWritePhy);$('rv-mdio-read-link')?.addEventListener('click',mdioReadAllLink);
+  $('rv-mdio-port')?.addEventListener('change',mdioPortChanged);$('rv-mdio-calc')?.addEventListener('click',mdioCalcMdc);$('rv-mdio-read-setup')?.addEventListener('click',mdioReadSetup);$('rv-mdio-apply')?.addEventListener('click',mdioApplySetup);$('rv-mdio-read-phy')?.addEventListener('click',mdioReadPhy);$('rv-mdio-write-phy')?.addEventListener('click',mdioWritePhy);$('rv-mdio-read-link')?.addEventListener('click',mdioReadAllLink);
 
   $('rv-fdb-read-config')?.addEventListener('click',fdbCtrlReadConfig);$('fdbReadConfig')?.addEventListener('click',fdbCtrlReadConfig);
-  $('rv-fdb-apply-en')?.addEventListener('click',fdbCtrlApplyEnable);$('rv-fdb-load-default')?.addEventListener('click',fdbCtrlLoadDefault);
+  $('rv-fdb-apply-en')?.addEventListener('click',fdbCtrlApplyEnable);
+  $('rv-fdb-load-default')?.addEventListener('click',fdbCtrlLoadDefault);
   (()=>{
     const FDB_MAC_OPTIONS = [
       { label:'Port 0 (enp12s0f0)', value:'A0:36:9F:A8:DA:60' },
@@ -4566,7 +4816,9 @@ function initApp() {
     renderCaptureRows();
   });
   $('copyPacketDetails')?.addEventListener('click', () => {
-    navigator.clipboard?.writeText($('packetDetails')?.textContent || '').then(() => toast('Copied!', 'ok'));
+    const el = $('packetDetails');
+    const text = el?.dataset.json || el?.textContent || '';
+    navigator.clipboard?.writeText(text).then(() => toast('Copied!', 'ok'));
   });
   $('copyPacketHex')?.addEventListener('click', () => {
     navigator.clipboard?.writeText($('packetHex')?.textContent || '').then(() => toast('Copied!', 'ok'));

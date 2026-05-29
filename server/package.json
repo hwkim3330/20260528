@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node tools/frameComboTest.js",
     "switch:deep-report": "node tools/switchDeepReport.js",
     "install-native": "npm install serialport cap --save-optional"
   },

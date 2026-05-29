@@ -189,6 +189,10 @@ function normalizeProfile(raw) {
  * need to know the bytes that follow (IPv4 total-length, UDP/TCP/ICMP checksums)
  * look ahead at the precomputed sizes and payload bytes.
  */
+// EtherType implied by the block that FOLLOWS an Ethernet/VLAN tag.
+// Used so the EtherType / inner-EtherType field always matches the next header.
+const ET_FOR_NEXT = { IPv4: 0x0800, ARP: 0x0806, VLAN: 0x8100 };
+
 function buildFrameFromBlocks(blocks, profile, seq) {
   // Pre-compute Payload block bytes (needed for transport checksum over real data)
   const precomputed = blocks.map(b => {
@@ -228,16 +232,19 @@ function buildFrameFromBlocks(blocks, profile, seq) {
 
     switch (block.type) {
       case 'Ethernet': {
-        // If followed by a VLAN block, the etherType field becomes the TPID
-        const et = (nextType === 'VLAN') ? 0x8100 : parseHex(block.etherType ?? '0x0800');
+        // EtherType follows the next header (0x8100 before VLAN, 0x0806 before ARP,
+        // 0x0800 before IPv4); fall back to the block's own value for raw/custom frames.
+        const et = ET_FOR_NEXT[nextType] ?? parseHex(block.etherType ?? '0x0800');
         parts.push(Buffer.concat([macBytes(block.dstMac), macBytes(block.srcMac), u16be(et)]));
         break;
       }
       case 'VLAN': {
-        // VLAN contributes 4 bytes: TCI (2) + inner EtherType (2)
-        // The TPID 0x8100 is in the preceding Ethernet block's etherType field
+        // VLAN contributes 4 bytes: TCI (2) + inner EtherType (2).
+        // The inner EtherType must describe what FOLLOWS the tag (ARP/IPv4/QinQ),
+        // mirroring how the Ethernet block switches to 0x8100 before a VLAN.
         const tci = ((block.priority ?? 0) << 13) | ((block.dei ? 1 : 0) << 12) | ((block.vlanId ?? 1) & 0xFFF);
-        parts.push(Buffer.concat([u16be(tci), u16be(parseHex(block.innerEtherType ?? '0x0800'))]));
+        const innerEt = ET_FOR_NEXT[nextType] ?? parseHex(block.innerEtherType ?? '0x0800');
+        parts.push(Buffer.concat([u16be(tci), u16be(innerEt)]));
         break;
       }
       case 'IPv4': {

@@ -70,7 +70,7 @@ function buildUDP(p, seq) {
   const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 17]), u16be(len)]);
   const full   = Buffer.concat([pseudo, hdr, data]);
   const cs     = checksum(full);
-  hdr.writeUInt16BE(cs, 6);
+  hdr.writeUInt16BE(cs === 0 ? 0xFFFF : cs, 6); // RFC768: transmit 0xFFFF; 0 means "no checksum"
   return Buffer.concat([hdr, data]);
 }
 
@@ -232,9 +232,16 @@ function buildFrameFromBlocks(blocks, profile, seq) {
 
   // Bytes from block index `from` to end, using actual payload data and zero-fill
   // for other headers (best-effort for unusual orderings)
-  const bytesFrom = (from) => Buffer.concat(
-    precomputed.slice(from).map((b, j) => b !== null ? b : Buffer.alloc(sizes[from + j]))
-  );
+  // Bytes from block index `from` to the end: real payload bytes where present,
+  // zero-fill (sized by that block's own header) elsewhere. Indexed directly on the
+  // original arrays so the size lookup can't drift — equivalent to the prior
+  // slice(from)+sizes[from+j], spelled out to be obviously correct.
+  const bytesFrom = (from) => {
+    const out = [];
+    for (let j = from; j < blocks.length; j++)
+      out.push(precomputed[j] !== null ? precomputed[j] : Buffer.alloc(sizes[j]));
+    return Buffer.concat(out);
+  };
 
   // Effective IPv4 fields — block-mode frames should be self-describing, so prefer
   // the IPv4 block's own fields and fall back to profile.ipv4. This is shared by the
@@ -273,7 +280,11 @@ function buildFrameFromBlocks(blocks, profile, seq) {
         break;
       }
       case 'IPv4': {
-        let ipProto = effIp.ipProto ?? 0;
+        // proto: explicit block/profile proto, else the overall profile.protocol name,
+        // else a following L4 block. Avoids leaving proto=0 (HOPOPT), which makes the
+        // receiver's kernel reply ICMP Protocol-Unreachable (Type 3 Code 2) echoing the
+        // original payload — looks like "my packet came back as ICMP". Explicit 0 is kept.
+        let ipProto = effIp.ipProto ?? protoNum(profile.protocol) ?? 0;
         for (let j = i + 1; j < blocks.length; j++) {
           if (blocks[j].type === 'UDP')  { ipProto = 17; break; }
           if (blocks[j].type === 'TCP')  { ipProto = 6;  break; }
@@ -313,7 +324,8 @@ function buildFrameFromBlocks(blocks, profile, seq) {
         const dp    = block.dstPort ?? u.dstPort ?? 50000;
         const hdr   = Buffer.concat([u16be(sp), u16be(dp), u16be(len), u16be(0)]);
         const pseudo = Buffer.concat([srcIp, dstIp, Buffer.from([0, 17]), u16be(len)]);
-        hdr.writeUInt16BE(checksum(Buffer.concat([pseudo, hdr, after])), 6);
+        const ucs    = checksum(Buffer.concat([pseudo, hdr, after]));
+        hdr.writeUInt16BE(ucs === 0 ? 0xFFFF : ucs, 6); // RFC768: 0 means "no checksum"
         parts.push(hdr);
         break;
       }

@@ -542,6 +542,10 @@ function _consumeTxEcho(dev, frame) {
 }
 
 function _recordTxFrame(dev, frame) {
+  // Only surface TX frames for an interface that is actually being captured. Sending on
+  // an unselected interface otherwise injected its frames into the shared capture buffer,
+  // so the capture view showed packets from interfaces the user wasn't watching.
+  if (!activeCaptures.has(dev) && !activeTcpdump.has(dev)) return;
   const hexStr = frame.toString('hex');
   // Register for dedup so the libpcap/tcpdump echo of this exact frame is suppressed once
   _rememberTx(dev, frame);

@@ -335,6 +335,29 @@ verify('leg ipv4(proto=udp17,no-l4)', buildFrame({ protocol: 'ipv4', srcMac: 'aa
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// 6) IPv4 proto backstop — must never silently emit proto=0 when a protocol is known
+// ════════════════════════════════════════════════════════════════════════════════
+{
+  // IPv4 + Payload, no L4 block, but block declares protocol → honored (fix #5)
+  {
+    const f = buildFrame({ interface: 't', blocks: [ETH(), IPV4({ protocol: 'tcp' }), PL('text', 'x')] }, 0);
+    check('proto/block-tcp', f[23] === 6, `ip.proto=${f[23]} (expected 6 from block.protocol)`);
+  }
+  // IPv4 + Payload, no L4 block, no block protocol, but overall profile.protocol set → backstop
+  {
+    const f = buildFrame({ interface: 't', protocol: 'udp',
+      blocks: [ETH(), { type: 'IPv4', srcIp: '1.1.1.1', dstIp: '2.2.2.2' }, PL('text', 'x')] }, 0);
+    check('proto/profile-udp', f[23] === 17, `ip.proto=${f[23]} (expected 17 from profile.protocol backstop)`);
+  }
+  // Explicit proto in profile.ipv4.ipProto is preserved (not overridden)
+  {
+    const f = buildFrame({ interface: 't', protocol: 'udp', ipv4: { ipProto: 47 },
+      blocks: [ETH(), { type: 'IPv4', srcIp: '1.1.1.1', dstIp: '2.2.2.2' }, PL('text', 'x')] }, 0);
+    check('proto/explicit-47', f[23] === 47, `ip.proto=${f[23]} (expected 47 GRE, explicit kept)`);
+  }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────────
 console.log(`\n  frameComboTest: ${passes.length} checks passed, ${failures.length} failed\n`);
 if (failures.length) {
